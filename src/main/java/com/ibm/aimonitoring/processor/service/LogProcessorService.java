@@ -8,6 +8,8 @@ import com.ibm.aimonitoring.processor.model.AnomalyDetection;
 import com.ibm.aimonitoring.processor.repository.AnomalyDetectionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +47,11 @@ public class LogProcessorService {
     private final MLServiceClient mlServiceClient;
     private final AnomalyDetectionRepository anomalyDetectionRepository;
     private final ObjectMapper objectMapper;
+    
+    // Self-injection for async method calls (required for @Async to work properly)
+    @Autowired
+    @Lazy
+    private LogProcessorService self;
 
     /**
      * Process a log entry: normalize, enrich, index to Elasticsearch, and detect anomalies
@@ -68,8 +75,8 @@ public class LogProcessorService {
 
             log.debug("Log processed successfully: documentId={}", documentId);
 
-            // Asynchronously detect anomalies
-            detectAnomaliesAsync(documentId, enrichedLog);
+            // Asynchronously detect anomalies via injected dependency
+            self.detectAnomaliesAsync(documentId, enrichedLog);
 
         } catch (Exception e) {
             log.error("Failed to process log: {}", e.getMessage(), e);
@@ -109,7 +116,8 @@ public class LogProcessorService {
                     if (prediction.getConfidence() > 0.7) {
                         log.info("High-confidence anomaly detected (confidence={}), alert should be triggered",
                                 prediction.getConfidence());
-                        // TODO: Integrate with alert service to send notifications
+                        // Note: Alert service integration can be added here when alert service is available
+                        // Example: alertService.sendAlert(logId, prediction);
                     }
                 }
                 
