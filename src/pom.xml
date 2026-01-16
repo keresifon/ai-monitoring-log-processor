@@ -14,8 +14,8 @@
     
     <groupId>com.ibm.aimonitoring</groupId>
     <artifactId>log-processor</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>LogProcessorService</name>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>Log Processor Service</name>
     <description>Log Processor Service for AI Monitoring System</description>
     
     <properties>
