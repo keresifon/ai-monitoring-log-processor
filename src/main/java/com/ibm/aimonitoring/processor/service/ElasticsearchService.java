@@ -443,7 +443,6 @@ public class ElasticsearchService {
                 
         } catch (IOException e) {
             log.error("Failed to get log volume: {}", e.getMessage(), e);
-            e.printStackTrace();
             return List.of();
         }
     }
@@ -512,7 +511,6 @@ public class ElasticsearchService {
                 
         } catch (IOException e) {
             log.error("Failed to get log level distribution: {}", e.getMessage(), e);
-            e.printStackTrace();
             return List.of();
         }
     }
@@ -571,7 +569,6 @@ public class ElasticsearchService {
                 
         } catch (IOException e) {
             log.error("Failed to get top services: {}", e.getMessage(), e);
-            e.printStackTrace();
             return List.of();
         }
     }

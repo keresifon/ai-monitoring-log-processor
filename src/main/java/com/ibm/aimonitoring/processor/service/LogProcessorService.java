@@ -8,7 +8,6 @@ import com.ibm.aimonitoring.processor.model.AnomalyDetection;
 import com.ibm.aimonitoring.processor.repository.AnomalyDetectionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -22,7 +21,6 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LogProcessorService {
 
     private static final String UNKNOWN_ENVIRONMENT = "unknown";
@@ -47,11 +45,24 @@ public class LogProcessorService {
     private final MLServiceClient mlServiceClient;
     private final AnomalyDetectionRepository anomalyDetectionRepository;
     private final ObjectMapper objectMapper;
+    private final LogProcessorService self;
     
-    // Self-injection for async method calls (required for @Async to work properly)
-    @Autowired
-    @Lazy
-    private LogProcessorService self;
+    /**
+     * Constructor injection with self-injection for async method calls
+     * @Lazy on self parameter prevents circular dependency and ensures @Async proxy works correctly
+     */
+    public LogProcessorService(
+            ElasticsearchService elasticsearchService,
+            MLServiceClient mlServiceClient,
+            AnomalyDetectionRepository anomalyDetectionRepository,
+            ObjectMapper objectMapper,
+            @Lazy LogProcessorService self) {
+        this.elasticsearchService = elasticsearchService;
+        this.mlServiceClient = mlServiceClient;
+        this.anomalyDetectionRepository = anomalyDetectionRepository;
+        this.objectMapper = objectMapper;
+        this.self = self;
+    }
 
     /**
      * Process a log entry: normalize, enrich, index to Elasticsearch, and detect anomalies
@@ -117,7 +128,6 @@ public class LogProcessorService {
                         log.info("High-confidence anomaly detected (confidence={}), alert should be triggered",
                                 prediction.getConfidence());
                         // Note: Alert service integration can be added here when alert service is available
-                        // Example: alertService.sendAlert(logId, prediction);
                     }
                 }
                 
