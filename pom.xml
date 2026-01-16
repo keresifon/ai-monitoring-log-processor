@@ -28,6 +28,11 @@
         <sonar.coverage.jacoco.xmlReportPaths>
             ${project.build.directory}/site/jacoco/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.exclusions>
+            **/dto/**,
+            **/model/**,
+            **/LogProcessorServiceApplication.java
+        </sonar.coverage.exclusions>
     </properties>
     
     <dependencyManagement>
@@ -171,6 +176,15 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.11</version>
+                <configuration>
+                    <excludes>
+                        <!-- Exclude DTOs and model classes from coverage (simple data holders) -->
+                        <exclude>**/dto/**</exclude>
+                        <exclude>**/model/**</exclude>
+                        <!-- Exclude application main class -->
+                        <exclude>**/LogProcessorServiceApplication.class</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
