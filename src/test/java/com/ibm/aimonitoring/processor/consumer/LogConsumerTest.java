@@ -15,7 +15,6 @@ import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,14 +50,14 @@ class LogConsumerTest {
     void testConsumeLog_Success() throws IOException {
         // Given
         doNothing().when(logProcessorService).processLog(any(LogEntryDTO.class));
-        doNothing().when(channel).basicAck(eq(deliveryTag), eq(false));
+        doNothing().when(channel).basicAck(deliveryTag, false);
 
         // When
         logConsumer.consumeLog(testLogEntry, channel, deliveryTag, message);
 
         // Then
-        verify(logProcessorService).processLog(eq(testLogEntry));
-        verify(channel).basicAck(eq(deliveryTag), eq(false));
+        verify(logProcessorService).processLog(testLogEntry);
+        verify(channel).basicAck(deliveryTag, false);
         verify(channel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
     }
 
@@ -67,15 +66,15 @@ class LogConsumerTest {
         // Given
         doThrow(new RuntimeException("Processing error"))
                 .when(logProcessorService).processLog(any(LogEntryDTO.class));
-        doNothing().when(channel).basicNack(eq(deliveryTag), eq(false), eq(false));
+        doNothing().when(channel).basicNack(deliveryTag, false, false);
 
         // When
         logConsumer.consumeLog(testLogEntry, channel, deliveryTag, message);
 
         // Then
-        verify(logProcessorService).processLog(eq(testLogEntry));
+        verify(logProcessorService).processLog(testLogEntry);
         verify(channel, never()).basicAck(anyLong(), anyBoolean());
-        verify(channel).basicNack(eq(deliveryTag), eq(false), eq(false));
+        verify(channel).basicNack(deliveryTag, false, false);
     }
 
     @Test
@@ -84,7 +83,7 @@ class LogConsumerTest {
         doThrow(new RuntimeException("Processing error"))
                 .when(logProcessorService).processLog(any(LogEntryDTO.class));
         doThrow(new IOException("Nack failed"))
-                .when(channel).basicNack(eq(deliveryTag), eq(false), eq(false));
+                .when(channel).basicNack(deliveryTag, false, false);
 
         // When - should not throw, just log error
         assertDoesNotThrow(() -> {
@@ -92,7 +91,7 @@ class LogConsumerTest {
         });
 
         // Then
-        verify(logProcessorService).processLog(eq(testLogEntry));
-        verify(channel).basicNack(eq(deliveryTag), eq(false), eq(false));
+        verify(logProcessorService).processLog(testLogEntry);
+        verify(channel).basicNack(deliveryTag, false, false);
     }
 }

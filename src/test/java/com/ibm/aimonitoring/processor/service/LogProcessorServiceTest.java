@@ -367,7 +367,9 @@ class LogProcessorServiceTest {
         logProcessorService.processLog(logEntry);
 
         // Then - level remains null if it was null (normalization only uppercases existing levels)
-        // The test verifies that processing completes without error even with null level
+        assertNull(logEntry.getLevel(), "Level should remain null when not provided");
+        assertNotNull(logEntry.getTimestamp(), "Timestamp should be set during normalization");
+        verify(elasticsearchService).indexLog(any(LogEntryDTO.class));
     }
 
     @Test

@@ -3,7 +3,6 @@ package com.ibm.aimonitoring.processor.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Result;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
-import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
 import com.ibm.aimonitoring.processor.dto.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -255,7 +254,7 @@ class ElasticsearchServiceTest {
         service.init();
 
         // Then - should not throw, just log warning
-        assertDoesNotThrow(() -> service.init());
+        assertDoesNotThrow(service::init);
     }
 
     @Test
