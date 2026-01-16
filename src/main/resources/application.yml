@@ -1,0 +1,88 @@
+spring:
+  application:
+    name: log-processor-service
+  
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ai_monitoring}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_schema: log_service
+  
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME}
+    password: ${RABBITMQ_PASSWORD}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+        retry:
+          enabled: true
+          initial-interval: 5000
+          max-attempts: 3
+          multiplier: 2.0
+  
+  task:
+    execution:
+      pool:
+        core-size: 5
+        max-size: 10
+        queue-capacity: 100
+
+# RabbitMQ Queue Configuration
+rabbitmq:
+  queue:
+    name: logs.raw
+
+server:
+  port: 8082
+
+# Elasticsearch Configuration
+elasticsearch:
+  host: ${ELASTICSEARCH_HOST:localhost}
+  port: ${ELASTICSEARCH_PORT:9200}
+  index:
+    name: logs
+    shards: 1
+    replicas: 0
+
+# ML Service Configuration
+ml:
+  service:
+    url: ${ML_SERVICE_URL:http://localhost:8000}
+    timeout: 5000
+    retry:
+      max-attempts: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  health:
+    elasticsearch:
+      enabled: false  # Disable ES health check - service will still log errors if ES operations fail
+
+logging:
+  level:
+    com.ibm.aimonitoring: DEBUG
+    org.springframework: INFO
+    co.elastic.clients: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# Made with Bob

@@ -1,0 +1,170 @@
+import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
+import co.elastic.clients.elasticsearch.indices.ExistsRequest;
+import co.elastic.clients.transport.endpoints.BooleanResponse;
+import com.ibm.aimonitoring.processor.dto.LogEntryDTO;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Service for Elasticsearch operations
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ElasticsearchService {
+
+    private static final String FIELD_TIMESTAMP = "timestamp";
+    private static final String FIELD_LEVEL = "level";
+    private static final String FIELD_MESSAGE = "message";
+    private static final String FIELD_SERVICE = "service";
+    private static final String FIELD_HOST = "host";
+    private static final String FIELD_ENVIRONMENT = "environment";
+    private static final String FIELD_TRACE_ID = "traceId";
+    private static final String FIELD_SPAN_ID = "spanId";
+    private static final String FIELD_METADATA = "metadata";
+
+    private final ElasticsearchClient elasticsearchClient;
+
+    @Value("${elasticsearch.index.name:logs}")
+    private String indexName;
+
+    @Value("${elasticsearch.index.shards:1}")
+    private int numberOfShards;
+
+    @Value("${elasticsearch.index.replicas:0}")
+    private int numberOfReplicas;
+
+    /**
+     * Initialize Elasticsearch index on startup
+     */
+    @PostConstruct
+    public void init() {
+        try {
+            createIndexIfNotExists();
+            log.info("Elasticsearch service initialized successfully");
+        } catch (Exception e) {
+            log.error("Failed to initialize Elasticsearch service: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Create index if it doesn't exist
+     */
+    private void createIndexIfNotExists() throws IOException {
+        BooleanResponse exists = elasticsearchClient.indices()
+                .exists(ExistsRequest.of(e -> e.index(indexName)));
+
+        if (!exists.value()) {
+            log.info("Creating Elasticsearch index: {}", indexName);
+            
+            CreateIndexResponse response = elasticsearchClient.indices()
+                    .create(c -> c
+                            .index(indexName)
+                            .settings(s -> s
+                                    .numberOfShards(String.valueOf(numberOfShards))
+                                    .numberOfReplicas(String.valueOf(numberOfReplicas))
+                            )
+                            .mappings(m -> m
+                                    .properties(FIELD_TIMESTAMP, p -> p.date(d -> d.format("strict_date_optional_time")))
+                                    .properties(FIELD_LEVEL, p -> p.keyword(k -> k))
+                                    .properties(FIELD_MESSAGE, p -> p.text(t -> t.analyzer("standard")))
+                                    .properties(FIELD_SERVICE, p -> p.keyword(k -> k))
+                                    .properties(FIELD_HOST, p -> p.keyword(k -> k))
+                                    .properties(FIELD_ENVIRONMENT, p -> p.keyword(k -> k))
+                                    .properties(FIELD_TRACE_ID, p -> p.keyword(k -> k))
+                                    .properties(FIELD_SPAN_ID, p -> p.keyword(k -> k))
+                                    .properties(FIELD_METADATA, p -> p.object(o -> o.enabled(true)))
+                            )
+                    );
+
+            log.info("Index created: {}, acknowledged: {}", indexName, response.acknowledged());
+        } else {
+            log.info("Index already exists: {}", indexName);
+        }
+    }
+
+    /**
+     * Index a log entry to Elasticsearch
+     *
+     * @param logEntry the log entry to index
+     * @return the document ID
+     */
+    public String indexLog(LogEntryDTO logEntry) {
+        try {
+            // Convert DTO to Map for indexing
+            Map<String, Object> document = convertToDocument(logEntry);
+
+            // Index the document
+            IndexResponse response = elasticsearchClient.index(i -> i
+                    .index(indexName)
+                    .document(document)
+            );
+
+            if (response.result() == Result.Created || response.result() == Result.Updated) {
+                log.debug("Log indexed successfully: {}", response.id());
+                return response.id();
+            } else {
+                log.warn("Unexpected index result: {}", response.result());
+                return null;
+            }
+
+        } catch (IOException e) {
+            log.error("Failed to index log to Elasticsearch: {}", e.getMessage(), e);
+            throw new ElasticsearchIndexException("Failed to index log", e);
+        }
+    }
+
+    /**
+     * Convert LogEntryDTO to a Map for Elasticsearch
+     */
+    private Map<String, Object> convertToDocument(LogEntryDTO logEntry) {
+        Map<String, Object> document = new HashMap<>();
+        
+        document.put(FIELD_TIMESTAMP, logEntry.getTimestamp() != null ?
+                logEntry.getTimestamp().toString() : null);
+        document.put(FIELD_LEVEL, logEntry.getLevel());
+        document.put(FIELD_MESSAGE, logEntry.getMessage());
+        document.put(FIELD_SERVICE, logEntry.getService());
+        document.put(FIELD_HOST, logEntry.getHost());
+        document.put(FIELD_ENVIRONMENT, logEntry.getEnvironment());
+        document.put(FIELD_TRACE_ID, logEntry.getTraceId());
+        document.put(FIELD_SPAN_ID, logEntry.getSpanId());
+        
+        if (logEntry.getMetadata() != null) {
+            document.put(FIELD_METADATA, logEntry.getMetadata());
+        }
+        
+        return document;
+    }
+
+    /**
+     * Check if Elasticsearch is available
+     */
+    public boolean isAvailable() {
+        try {
+            return elasticsearchClient.ping().value();
+        } catch (IOException e) {
+            log.error("Elasticsearch ping failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Custom exception for Elasticsearch indexing errors
+     */
+    public static class ElasticsearchIndexException extends RuntimeException {
+        public ElasticsearchIndexException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
+}
+
+// Made with Bob
