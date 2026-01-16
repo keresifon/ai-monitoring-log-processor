@@ -67,6 +67,8 @@ class LogProcessorServiceApplicationTests {
         // This test verifies that the Spring application context loads successfully
         // with mocked external dependencies (RabbitMQ, Elasticsearch, RestTemplate)
         // and a real PostgreSQL database provided by Testcontainers
+        org.junit.jupiter.api.Assertions.assertNotNull(postgres, "PostgreSQL container should be initialized");
+        org.junit.jupiter.api.Assertions.assertNotNull(postgres.getJdbcUrl(), "PostgreSQL container should provide JDBC URL");
     }
 }
 

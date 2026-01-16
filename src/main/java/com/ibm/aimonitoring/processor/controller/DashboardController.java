@@ -7,6 +7,7 @@ import com.ibm.aimonitoring.processor.service.ElasticsearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,16 +39,17 @@ public class DashboardController {
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
             log.error("Error fetching dashboard metrics", e);
-            // Return empty metrics instead of error
-            return ResponseEntity.ok(DashboardMetricsDTO.builder()
-                    .totalLogs(0)
-                    .errorCount(0)
-                    .warningCount(0)
-                    .activeAlerts(0)
-                    .anomalyCount(0)
-                    .logsPerMinute(0.0)
-                    .errorRate(0.0)
-                    .build());
+            // Return empty metrics with 503 Service Unavailable status
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(DashboardMetricsDTO.builder()
+                            .totalLogs(0)
+                            .errorCount(0)
+                            .warningCount(0)
+                            .activeAlerts(0)
+                            .anomalyCount(0)
+                            .logsPerMinute(0.0)
+                            .errorRate(0.0)
+                            .build());
         }
     }
 
@@ -67,7 +69,8 @@ public class DashboardController {
             return ResponseEntity.ok(volume);
         } catch (Exception e) {
             log.error("Error fetching log volume", e);
-            return ResponseEntity.ok(List.of());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(List.of());
         }
     }
 
@@ -83,7 +86,8 @@ public class DashboardController {
             return ResponseEntity.ok(distribution);
         } catch (Exception e) {
             log.error("Error fetching log level distribution", e);
-            return ResponseEntity.ok(List.of());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(List.of());
         }
     }
 
@@ -100,7 +104,8 @@ public class DashboardController {
             return ResponseEntity.ok(services);
         } catch (Exception e) {
             log.error("Error fetching top services", e);
-            return ResponseEntity.ok(List.of());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(List.of());
         }
     }
 
@@ -119,7 +124,8 @@ public class DashboardController {
             return ResponseEntity.ok(anomalies);
         } catch (Exception e) {
             log.error("Error fetching anomalies", e);
-            return ResponseEntity.ok(List.of());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(List.of());
         }
     }
 

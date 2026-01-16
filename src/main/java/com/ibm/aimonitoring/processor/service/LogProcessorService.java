@@ -105,10 +105,11 @@ public class LogProcessorService {
                     log.warn("Anomaly detected in log {}: score={}, confidence={}",
                             logId, prediction.getAnomalyScore(), prediction.getConfidence());
                     
-                    // TODO: Trigger alerts for high-confidence anomalies
+                    // Trigger alerts for high-confidence anomalies
                     if (prediction.getConfidence() > 0.7) {
                         log.info("High-confidence anomaly detected (confidence={}), alert should be triggered",
                                 prediction.getConfidence());
+                        // TODO: Integrate with alert service to send notifications
                     }
                 }
                 
@@ -128,7 +129,7 @@ public class LogProcessorService {
         try {
             // Prepare features as JSON
             Map<String, Object> features = new HashMap<>();
-            features.put("messageLength", logEntry.getMessage() != null ? logEntry.getMessage().length() : 0);
+            features.put(METADATA_KEY_MESSAGE_LENGTH, logEntry.getMessage() != null ? logEntry.getMessage().length() : 0);
             features.put("level", logEntry.getLevel());
             features.put("service", logEntry.getService());
             features.put(METADATA_KEY_HAS_EXCEPTION, logEntry.getMetadata() != null &&
