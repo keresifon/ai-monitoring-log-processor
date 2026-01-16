@@ -14,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -117,7 +116,7 @@ class LogSearchControllerTest {
                 .thenReturn(expectedResponse);
 
         // When - using default values for page (0), size (50), sortBy ("timestamp"), sortDirection ("desc")
-        ResponseEntity<LogSearchResponse> response = logSearchController.searchLogs(
+        logSearchController.searchLogs(
                 0, 50, "timestamp", "desc", levels, null, null, null, null
         );
 
@@ -149,7 +148,7 @@ class LogSearchControllerTest {
                 .thenReturn(expectedResponse);
 
         // When - using default values for page (0), size (50), sortBy ("timestamp"), sortDirection ("desc")
-        ResponseEntity<LogSearchResponse> response = logSearchController.searchLogs(
+        logSearchController.searchLogs(
                 0, 50, "timestamp", "desc", null, services, null, null, null
         );
 

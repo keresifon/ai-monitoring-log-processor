@@ -198,7 +198,6 @@ class DashboardControllerTest {
     void testGetAnomalies_Success() {
         // Given
         int hours = 24;
-        Instant startTime = Instant.now().minus(hours, java.time.temporal.ChronoUnit.HOURS);
         List<AnomalyDetection> expectedAnomalies = List.of(
                 AnomalyDetection.builder()
                         .logId("log-123")

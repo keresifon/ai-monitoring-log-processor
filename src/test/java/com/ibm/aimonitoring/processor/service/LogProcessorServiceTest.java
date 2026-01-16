@@ -10,7 +10,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -215,7 +214,7 @@ class LogProcessorServiceTest {
         logProcessorService.detectAnomaliesAsync(logId, logEntry);
 
         // Then
-        verify(mlServiceClient).predictAnomaly(eq(logId), eq(logEntry));
+        verify(mlServiceClient).predictAnomaly(logId, logEntry);
         verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
         assertEquals(true, logEntry.getMetadata().get("anomalyDetected"));
         assertEquals(0.85, logEntry.getMetadata().get("anomalyScore"));
@@ -235,7 +234,7 @@ class LogProcessorServiceTest {
         logProcessorService.detectAnomaliesAsync(logId, logEntry);
 
         // Then
-        verify(mlServiceClient).predictAnomaly(eq(logId), eq(logEntry));
+        verify(mlServiceClient).predictAnomaly(logId, logEntry);
         verify(anomalyDetectionRepository, never()).save(any());
     }
 
@@ -283,7 +282,7 @@ class LogProcessorServiceTest {
         assertDoesNotThrow(() -> logProcessorService.detectAnomaliesAsync(logId, logEntry));
 
         // Then
-        verify(mlServiceClient).predictAnomaly(eq(logId), eq(logEntry));
+        verify(mlServiceClient).predictAnomaly(logId, logEntry);
     }
 
     @Test
@@ -351,5 +350,153 @@ class LogProcessorServiceTest {
 
         // Then - should handle exception gracefully
         verify(anomalyDetectionRepository, never()).save(any());
+    }
+
+    @Test
+    void testNormalizeLog_WithNullLevel() {
+        // Given
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("test")
+                .service("test")
+                .build();
+
+        when(elasticsearchService.indexLog(any(LogEntryDTO.class))).thenReturn("doc-1");
+        when(mlServiceClient.predictAnomaly(anyString(), any(LogEntryDTO.class))).thenReturn(null);
+
+        // When
+        logProcessorService.processLog(logEntry);
+
+        // Then - level remains null if it was null (normalization only uppercases existing levels)
+        // The test verifies that processing completes without error even with null level
+    }
+
+    @Test
+    void testEnrichLog_WithNullMessage() {
+        // Given
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .level("INFO")
+                .service("test")
+                .message(null)
+                .build();
+
+        when(elasticsearchService.indexLog(any(LogEntryDTO.class))).thenReturn("doc-1");
+        when(mlServiceClient.predictAnomaly(anyString(), any(LogEntryDTO.class))).thenReturn(null);
+
+        // When
+        logProcessorService.processLog(logEntry);
+
+        // Then
+        assertNotNull(logEntry.getMetadata());
+        assertTrue(logEntry.getMetadata().containsKey("processedAt"));
+    }
+
+    @Test
+    void testEnrichLog_WithEmptyMessage() {
+        // Given
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .level("INFO")
+                .service("test")
+                .message("")
+                .build();
+
+        when(elasticsearchService.indexLog(any(LogEntryDTO.class))).thenReturn("doc-1");
+        when(mlServiceClient.predictAnomaly(anyString(), any(LogEntryDTO.class))).thenReturn(null);
+
+        // When
+        logProcessorService.processLog(logEntry);
+
+        // Then
+        assertNotNull(logEntry.getMetadata());
+        assertEquals(0, logEntry.getMetadata().get("messageLength"));
+    }
+
+    @Test
+    void testDetectAnomaliesAsync_WithLowConfidence() throws JsonProcessingException {
+        // Given
+        String logId = "log-123";
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("Test message")
+                .level("ERROR")
+                .service("test")
+                .metadata(new HashMap<>())
+                .build();
+
+        MLPredictionResponse prediction = MLPredictionResponse.builder()
+                .isAnomaly(true)
+                .anomalyScore(0.60)
+                .confidence(0.50) // Low confidence
+                .modelVersion("v1.0")
+                .build();
+
+        when(mlServiceClient.predictAnomaly(eq(logId), any(LogEntryDTO.class))).thenReturn(prediction);
+        when(objectMapper.writeValueAsString(any(Map.class))).thenReturn("{}");
+        when(anomalyDetectionRepository.save(any(AnomalyDetection.class))).thenReturn(new AnomalyDetection());
+
+        // When
+        logProcessorService.detectAnomaliesAsync(logId, logEntry);
+
+        // Then
+        verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
+        // Low confidence should not trigger alert
+    }
+
+    @Test
+    void testDetectAnomaliesAsync_WithNonAnomaly() throws JsonProcessingException {
+        // Given
+        String logId = "log-123";
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("Test message")
+                .level("INFO")
+                .service("test")
+                .metadata(new HashMap<>())
+                .build();
+
+        MLPredictionResponse prediction = MLPredictionResponse.builder()
+                .isAnomaly(false)
+                .anomalyScore(0.30)
+                .confidence(0.80)
+                .modelVersion("v1.0")
+                .build();
+
+        when(mlServiceClient.predictAnomaly(eq(logId), any(LogEntryDTO.class))).thenReturn(prediction);
+        when(objectMapper.writeValueAsString(any(Map.class))).thenReturn("{}");
+        when(anomalyDetectionRepository.save(any(AnomalyDetection.class))).thenReturn(new AnomalyDetection());
+
+        // When
+        logProcessorService.detectAnomaliesAsync(logId, logEntry);
+
+        // Then
+        verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
+        assertEquals(false, logEntry.getMetadata().get("anomalyDetected"));
+    }
+
+    @Test
+    void testSaveAnomalyDetection_WithRepositoryException() throws JsonProcessingException {
+        // Given
+        String logId = "log-123";
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("Test")
+                .level("ERROR")
+                .service("test")
+                .metadata(new HashMap<>())
+                .build();
+
+        MLPredictionResponse prediction = MLPredictionResponse.builder()
+                .isAnomaly(true)
+                .anomalyScore(0.80)
+                .confidence(0.70)
+                .modelVersion("v1.0")
+                .build();
+
+        when(mlServiceClient.predictAnomaly(eq(logId), any(LogEntryDTO.class))).thenReturn(prediction);
+        when(objectMapper.writeValueAsString(any(Map.class))).thenReturn("{}");
+        when(anomalyDetectionRepository.save(any(AnomalyDetection.class)))
+                .thenThrow(new RuntimeException("Database error"));
+
+        // When - should handle exception gracefully
+        assertDoesNotThrow(() -> logProcessorService.detectAnomaliesAsync(logId, logEntry));
+
+        // Then
+        verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
     }
 }
