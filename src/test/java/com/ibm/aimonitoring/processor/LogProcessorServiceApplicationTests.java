@@ -11,8 +11,11 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.time.Duration;
 
 /**
  * Integration test for Spring Boot application context.
@@ -28,7 +31,9 @@ class LogProcessorServiceApplicationTests {
             .withDatabaseName("aimonitoring")
             .withUsername("postgres")
             .withPassword("postgres")
-            .withInitScript("schema.sql");
+            .withInitScript("schema.sql")
+            .waitingFor(Wait.forListeningPort())
+            .withStartupTimeout(Duration.ofMinutes(2));
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
