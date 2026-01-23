@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/OWNER/ai-monitoring-log-processor
+  repository: ghcr.io/keresifon/ai-monitoring-log-processor
   pullPolicy: IfNotPresent
   tag: "latest"
 
