@@ -37,9 +37,13 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
+      - name: Set up Docker for Testcontainers
+        uses: docker/setup-buildx-action@v3
+
       - name: Build, Test and Analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          TESTCONTAINERS_RYUK_DISABLED: "true"
         run: mvn -B clean verify sonar:sonar
 
       - name: Upload coverage to Codecov
@@ -61,15 +65,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java
+          build-mode: none
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
 
   # Builds Docker image on develop (with sha) or version tags (with semver)
   docker-build:
@@ -207,7 +212,7 @@ jobs:
           output: 'trivy-results.sarif'
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
 
