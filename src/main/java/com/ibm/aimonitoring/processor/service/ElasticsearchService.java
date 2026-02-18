@@ -11,7 +11,6 @@ import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
 import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
-import co.elastic.clients.json.JsonData;
 import com.ibm.aimonitoring.processor.dto.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -267,16 +266,16 @@ public class ElasticsearchService {
      */
     private void addTimeRangeFilter(BoolQuery.Builder b, LogSearchRequest request) {
         if (request.getStartTime() != null || request.getEndTime() != null) {
-            b.filter(f -> f.range(r -> {
-                r.field(FIELD_TIMESTAMP);
+            b.filter(f -> f.range(r -> r.date(d -> {
+                d.field(FIELD_TIMESTAMP);
                 if (request.getStartTime() != null) {
-                    r.gte(JsonData.of(request.getStartTime().toString()));
+                    d.gte(request.getStartTime().toString());
                 }
                 if (request.getEndTime() != null) {
-                    r.lte(JsonData.of(request.getEndTime().toString()));
+                    d.lte(request.getEndTime().toString());
                 }
-                return r;
-            }));
+                return d;
+            })));
         }
     }
 
@@ -390,11 +389,11 @@ public class ElasticsearchService {
             SearchResponse<Map<String, Object>> response = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
-                .query(q -> q.range(r -> r
+                .query(q -> q.range(r -> r.date(d -> d
                     .field(FIELD_TIMESTAMP)
-                    .gte(JsonData.of(startTime.toString()))
-                    .lte(JsonData.of(endTime.toString()))
-                ))
+                    .gte(startTime.toString())
+                    .lte(endTime.toString())
+                )))
                 .aggregations(AGG_VOLUME_OVER_TIME, a -> a
                     .dateHistogram(dh -> dh
                         .field(FIELD_TIMESTAMP)
