@@ -252,16 +252,23 @@
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
                 <version>12.2.0</version>
+                <configuration>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                    <suppressionFiles>
+                        <suppressionFile>dependency-check-suppression.xml</suppressionFile>
+                    </suppressionFiles>
+                    <!-- Skip NVD data update to avoid database issues in CI/CD -->
+                    <skipNvdUpdate>false</skipNvdUpdate>
+                    <!-- Use cached data if available -->
+                    <cveValidForHours>24</cveValidForHours>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
                             <goal>check</goal>
                         </goals>
                         <phase>verify</phase>
-                        <configuration>
-                            <failBuildOnCVSS>7</failBuildOnCVSS>
-                            <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
