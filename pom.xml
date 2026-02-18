@@ -8,7 +8,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.4.2</version>
+        <version>3.4.13</version>
         <relativePath/>
     </parent>
     
@@ -25,7 +25,10 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <commons-lang3.version>3.18.0</commons-lang3.version>
         <log4j.version>2.25.0</log4j.version>
-        <netty.version>4.1.118.Final</netty.version>
+        <netty.version>4.1.124.Final</netty.version>
+        <logback.version>1.5.25</logback.version>
+        <tomcat.version>10.1.52</tomcat.version>
+        <reactor-netty.version>1.2.8</reactor-netty.version>
         <sonar.organization>keresifon</sonar.organization>
         <sonar.projectKey>keresifon_ai-monitoring-log-processor</sonar.projectKey>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
