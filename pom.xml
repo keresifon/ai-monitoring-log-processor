@@ -250,7 +250,11 @@
                 <version>3.10.0.2594</version>
             </plugin>
 
-            <!-- OWASP Dependency-Check for CVE detection -->
+            <!-- OWASP Dependency-Check for CVE detection
+                 Requires NVD_API_KEY env var for NVD database updates.
+                 Without it, the NVD API rate-limits requests (HTTP 429).
+                 Local: mvn verify -Ddependency-check.skip=true  (skip the check)
+                 CI:    NVD_API_KEY is provided via GitHub secrets -->
             <plugin>
                 <groupId>org.owasp</groupId>
                 <artifactId>dependency-check-maven</artifactId>
@@ -261,9 +265,8 @@
                     <suppressionFiles>
                         <suppressionFile>dependency-check-suppression.xml</suppressionFile>
                     </suppressionFiles>
-                    <!-- Skip NVD data update to avoid database issues in CI/CD -->
-                    <skipNvdUpdate>false</skipNvdUpdate>
-                    <!-- Use cached data if available -->
+                    <nvdMaxRetryCount>3</nvdMaxRetryCount>
+                    <failOnError>false</failOnError>
                     <cveValidForHours>24</cveValidForHours>
                 </configuration>
                 <executions>
