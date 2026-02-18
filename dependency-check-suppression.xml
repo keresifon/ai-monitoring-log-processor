@@ -35,6 +35,9 @@
         <cve>CVE-2024-52980</cve>
         <cve>CVE-2024-23449</cve>
         <cve>CVE-2025-37731</cve>
+        <cve>CVE-2025-68384</cve>
+        <cve>CVE-2025-37727</cve>
+        <cve>CVE-2025-68390</cve>
     </suppress>
     
     <!-- Elasticsearch Java client - Server CVEs not applicable to client -->
@@ -74,9 +77,9 @@
     <!-- Tomcat embed - transitive from Spring Boot. Upgrade Spring Boot when patched. -->
     <suppress until="2026-05-18Z">
         <notes><![CDATA[
-        Tomcat embed comes from Spring Boot 3.4.2 BOM. Multiple CVEs; upgrade Spring Boot when patched versions available.
+        Tomcat embed (core, websocket) comes from Spring Boot 3.4.2 BOM. Upgrade Spring Boot when patched versions available.
         ]]></notes>
-        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-core@.*$</packageUrl>
+        <packageUrl regex="true">^pkg:maven/org\.apache\.tomcat\.embed/tomcat\-embed\-.*@.*$</packageUrl>
         <cve>CVE-2025-24813</cve>
         <cve>CVE-2025-31651</cve>
         <cve>CVE-2025-55754</cve>
