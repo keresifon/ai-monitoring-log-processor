@@ -50,7 +50,7 @@
     </suppress>
     
     <!-- Netty - CPE matches Netty server; embed/transport is client-side only. Review when patched versions available. -->
-    <suppress until="2026-05-18">
+    <suppress until="2026-05-18Z">
         <notes><![CDATA[
         Netty transport is used as HTTP client by Elasticsearch/WebClient. CPE mapping may overmatch.
         Using netty-bom 4.1.118.Final. Review when newer patched versions are available.
@@ -63,7 +63,7 @@
     </suppress>
     
     <!-- Log4j API - CVE-2025-68161. Using log4j-bom 2.25.0. -->
-    <suppress until="2026-05-18">
+    <suppress until="2026-05-18Z">
         <notes><![CDATA[
         Log4j 2.25.0 via BOM override. CVE-2025-68161 may be mitigated or require further assessment.
         ]]></notes>
@@ -72,7 +72,7 @@
     </suppress>
     
     <!-- Tomcat embed - transitive from Spring Boot. Upgrade Spring Boot when patched. -->
-    <suppress until="2026-05-18">
+    <suppress until="2026-05-18Z">
         <notes><![CDATA[
         Tomcat embed comes from Spring Boot 3.4.2 BOM. Multiple CVEs; upgrade Spring Boot when patched versions available.
         ]]></notes>
