@@ -221,6 +221,7 @@
                         <phase>verify</phase>
                         <configuration>
                             <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
                         </configuration>
                     </execution>
                 </executions>
