@@ -25,7 +25,7 @@
         <testcontainers.version>1.21.4</testcontainers.version>
         <commons-lang3.version>3.18.0</commons-lang3.version>
         <log4j.version>2.25.0</log4j.version>
-        <netty.version>4.1.124.Final</netty.version>
+        <netty.version>4.1.131.Final</netty.version>
         <logback.version>1.5.25</logback.version>
         <tomcat.version>10.1.52</tomcat.version>
         <reactor-netty.version>1.2.8</reactor-netty.version>
