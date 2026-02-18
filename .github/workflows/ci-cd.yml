@@ -47,7 +47,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           TESTCONTAINERS_RYUK_DISABLED: "true"
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: mvn -B clean verify sonar:sonar -DnvdApiKey="$NVD_API_KEY"
+        run: mvn -B clean verify sonar:sonar
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
