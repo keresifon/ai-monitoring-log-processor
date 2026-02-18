@@ -54,6 +54,9 @@ class LogProcessorServiceApplicationTests {
         registry.add("spring.rabbitmq.port", () -> String.valueOf(rabbit.getAmqpPort()));
         registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
+        // Disable SpringDoc/Swagger to avoid condition processing error in this integration test
+        registry.add("springdoc.api-docs.enabled", () -> "false");
+        registry.add("springdoc.swagger-ui.enabled", () -> "false");
     }
 
     @MockBean
