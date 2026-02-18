@@ -221,6 +221,8 @@
                         <phase>verify</phase>
                         <configuration>
                             <failBuildOnCVSS>7</failBuildOnCVSS>
+                            <!-- NVD API key from env for faster CVE lookups; get free key at https://nvd.nist.gov/developers/request-an-api-key -->
+                            <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
                         </configuration>
                     </execution>
                 </executions>
