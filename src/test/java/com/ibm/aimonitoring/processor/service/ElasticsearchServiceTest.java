@@ -11,6 +11,7 @@ import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.aggregations.AvgAggregate;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.TotalHitsRelation;
@@ -324,7 +325,7 @@ class ElasticsearchServiceTest {
 
     @Test
     void testSearchLogs_Success() throws IOException {
-        // Given
+        // Given (invoke Function to cover buildSearchRequest)
         Map<String, Object> sourceDoc = new HashMap<>();
         sourceDoc.put("timestamp", "2024-01-15T10:30:00Z");
         sourceDoc.put("level", "ERROR");
@@ -344,7 +345,13 @@ class ElasticsearchServiceTest {
                 )
         );
 
-        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Function<SearchRequest.Builder, Object> fn = inv.getArgument(0);
+            SearchRequest.Builder builder = new SearchRequest.Builder();
+            fn.apply(builder);
+            return searchResponse;
+        }).when(elasticsearchClient).search(any(Function.class), eq(Map.class));
 
         LogSearchRequest request = LogSearchRequest.builder()
                 .page(0)
@@ -368,7 +375,7 @@ class ElasticsearchServiceTest {
 
     @Test
     void testSearchLogs_WithFilters() throws IOException {
-        // Given - search with query, levels, services, time range
+        // Given - search with query, levels, services, time range (invoke Function to cover buildSearchRequest/filters)
         var emptyResponse = SearchResponse.of(s -> s
                 .took(0)
                 .timedOut(false)
@@ -376,7 +383,13 @@ class ElasticsearchServiceTest {
                 .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
         );
 
-        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(emptyResponse);
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Function<SearchRequest.Builder, Object> fn = inv.getArgument(0);
+            SearchRequest.Builder builder = new SearchRequest.Builder();
+            fn.apply(builder);
+            return emptyResponse;
+        }).when(elasticsearchClient).search(any(Function.class), eq(Map.class));
 
         LogSearchRequest request = LogSearchRequest.builder()
                 .query("error")
@@ -436,6 +449,28 @@ class ElasticsearchServiceTest {
     }
 
     @Test
+    void testGetDashboardMetrics_ZeroLogs() throws IOException {
+        // Given - all counts zero (covers totalLogs > 0 ? errorRate : 0.0 branch)
+        var zeroResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(zeroResponse);
+
+        DashboardMetricsDTO metrics = elasticsearchService.getDashboardMetrics();
+
+        assertNotNull(metrics);
+        assertEquals(0L, metrics.getTotalLogs());
+        assertEquals(0L, metrics.getErrorCount());
+        assertEquals(0L, metrics.getWarningCount());
+        assertEquals(0.0, metrics.getErrorRate());
+        assertEquals(0.0, metrics.getLogsPerMinute());
+    }
+
+    @Test
     void testConvertToLogEntry_WithMetadata() throws IOException {
         // Given - document with metadata
         Map<String, Object> metadata = new HashMap<>();
@@ -461,7 +496,12 @@ class ElasticsearchServiceTest {
                         .hits(List.of(hit))
                 )
         );
-        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Function<SearchRequest.Builder, Object> fn = inv.getArgument(0);
+            fn.apply(new SearchRequest.Builder());
+            return searchResponse;
+        }).when(elasticsearchClient).search(any(Function.class), eq(Map.class));
 
         LogSearchRequest request = LogSearchRequest.builder().page(0).size(10).build();
 
@@ -633,7 +673,12 @@ class ElasticsearchServiceTest {
                 .shards(sh -> sh.total(1).failed(0).successful(1))
                 .hits(h -> h.total(t -> t.value(1L).relation(TotalHitsRelation.Eq)).hits(List.of(hit)))
         );
-        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+        doAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Function<SearchRequest.Builder, Object> fn = inv.getArgument(0);
+            fn.apply(new SearchRequest.Builder());
+            return searchResponse;
+        }).when(elasticsearchClient).search(any(Function.class), eq(Map.class));
 
         LogSearchRequest request = LogSearchRequest.builder().page(0).size(10).build();
 

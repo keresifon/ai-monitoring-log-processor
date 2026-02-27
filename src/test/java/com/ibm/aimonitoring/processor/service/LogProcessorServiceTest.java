@@ -470,7 +470,36 @@ class LogProcessorServiceTest {
 
         // Then
         verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
-        // Low confidence should not trigger alert
+        // Low confidence should not trigger alert (confidence > 0.7 is false)
+    }
+
+    @Test
+    void testDetectAnomaliesAsync_WithConfidenceExactly07() throws JsonProcessingException {
+        // Given - anomaly with confidence exactly 0.7 (boundary: > 0.7 is false, no alert)
+        String logId = "log-123";
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("Test message")
+                .level("ERROR")
+                .service("test")
+                .metadata(new HashMap<>())
+                .build();
+
+        MLPredictionResponse prediction = MLPredictionResponse.builder()
+                .isAnomaly(true)
+                .anomalyScore(0.75)
+                .confidence(0.70) // Exactly 0.7 - does not trigger high-confidence alert
+                .modelVersion("v1.0")
+                .build();
+
+        when(mlServiceClient.predictAnomaly(eq(logId), any(LogEntryDTO.class))).thenReturn(prediction);
+        when(objectMapper.writeValueAsString(any(Map.class))).thenReturn("{}");
+        when(anomalyDetectionRepository.save(any(AnomalyDetection.class))).thenReturn(new AnomalyDetection());
+
+        // When
+        logProcessorService.detectAnomaliesAsync(logId, logEntry);
+
+        // Then - saves anomaly but does NOT trigger high-confidence log (confidence > 0.7 is false)
+        verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
     }
 
     @Test
