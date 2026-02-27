@@ -6,10 +6,10 @@ This document details the security vulnerability fixes applied to the AI Monitor
 ## Dependency Updates
 
 ### 1. Spring Boot Framework
-- **Previous Version**: 3.3.13
-- **Updated Version**: 3.4.2
-- **Impact**: Updates transitive dependencies including Tomcat, Jackson, and other core libraries
-- **CVEs Addressed**: Multiple Tomcat CVEs (CVE-2024-50379, CVE-2024-56337, CVE-2025-24813, etc.)
+- **Previous Version**: 3.4.2
+- **Updated Version**: 3.4.13
+- **Impact**: Updates transitive dependencies including Tomcat, Spring Framework, Reactor Netty
+- **CVEs Addressed**: CVE-2025-22235 (EndpointRequest.to()), Spring Framework annotation detection (CVE-2025-41249), path traversal (CVE-2025-41242), and related
 
 ### 2. Elasticsearch Client
 - **Previous Version**: 8.17.1
@@ -28,11 +28,26 @@ This document details the security vulnerability fixes applied to the AI Monitor
 - **CVEs Addressed**: CVE-2025-68161
 
 ### 5. Netty
-- **Previous Version**: 4.1.115.Final (transitive)
-- **Updated Version**: 4.1.118.Final (BOM override)
-- **CVEs Addressed**: CVE-2025-55163, CVE-2025-24970, CVE-2025-58057, CVE-2025-67735, CVE-2025-25193, CVE-2025-58056
+- **Previous Version**: 4.1.124.Final (transitive)
+- **Updated Version**: 4.1.131.Final (BOM override)
+- **CVEs Addressed**: CVE-2025-67735 (CRLF injection/request smuggling), CVE-2025-58057 (BrotliDecoder zip bomb DoS), CVE-2025-58056 (chunk extensions smuggling)
 
-### 6. SpringDoc OpenAPI (Swagger UI)
+### 6. Logback
+- **Previous Version**: 1.5.16 (transitive from Spring Boot)
+- **Updated Version**: 1.5.25 (explicit override)
+- **CVEs Addressed**: CVE-2025-11226 (arbitrary code execution via conditional config), CVE-2026-1225 (malicious logback.xml class instantiation)
+
+### 7. Apache Tomcat (Embed)
+- **Previous Version**: 10.1.34 (transitive from Spring Boot 3.4.2)
+- **Updated Version**: 10.1.52 (explicit override)
+- **CVEs Addressed**: Console manipulation, partial PUT RCE, directory traversal, MadeYouReset DoS, multipart DoS, security constraint bypass, CGI/rewrite bypass
+
+### 8. Reactor Netty
+- **Previous Version**: 1.2.x (transitive from Spring Boot)
+- **Updated Version**: 1.2.8 (explicit override)
+- **CVEs Addressed**: CVE-2025-22227 (credential leak on chained redirects)
+
+### 9. SpringDoc OpenAPI (Swagger UI)
 - **Previous Version**: 2.8.4
 - **Updated Version**: 2.8.7
 - **CVEs Addressed**: CVE-2025-26791 (DOMPurify in Swagger UI)
