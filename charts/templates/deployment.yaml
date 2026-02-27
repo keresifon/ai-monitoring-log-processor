@@ -2,8 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "log-processor.fullname" . }}
+  namespace: ai-monitoring
   labels:
     {{- include "log-processor.labels" . | nindent 4 }}
+    tier: backend
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -13,6 +15,7 @@ spec:
     metadata:
       labels:
         {{- include "log-processor.selectorLabels" . | nindent 8 }}
+        tier: backend
     spec:
       serviceAccountName: {{ include "log-processor.serviceAccountName" . }}
       containers:
@@ -46,6 +49,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "log-processor.fullname" . }}-secrets
                   key: rabbitmq-password
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
