@@ -12,7 +12,7 @@ import java.time.Instant;
  * Entity for storing anomaly detection results
  */
 @Entity
-@Table(name = "anomaly_detections", schema = "ml_service")
+@Table(name = "anomaly_detections", schema = "log_service")
 @Data
 @Builder
 @NoArgsConstructor

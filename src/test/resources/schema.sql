@@ -1,2 +1,2 @@
--- Create schema for ML service
-CREATE SCHEMA IF NOT EXISTS ml_service;
+-- Create schema for log-processor
+CREATE SCHEMA IF NOT EXISTS log_service;
