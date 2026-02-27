@@ -1,6 +1,9 @@
 # Multi-stage build for Log Processor Service
 FROM maven:3.9-eclipse-temurin-17-alpine AS build
 
+# Upgrade OS packages for security (libpng, gnutls CVEs)
+RUN apk upgrade --no-cache
+
 WORKDIR /app
 
 # Copy pom.xml and download dependencies (cached layer)
@@ -13,6 +16,9 @@ RUN mvn clean package -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:17-jre-alpine
+
+# Upgrade OS packages to fix: CVE-2026-25646 (libpng), CVE-2026-1584 + CVE-2025-14831 (gnutls)
+RUN apk upgrade --no-cache
 
 WORKDIR /app
 

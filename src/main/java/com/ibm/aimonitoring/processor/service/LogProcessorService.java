@@ -8,6 +8,7 @@ import com.ibm.aimonitoring.processor.model.AnomalyDetection;
 import com.ibm.aimonitoring.processor.repository.AnomalyDetectionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +21,6 @@ import java.util.Map;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class LogProcessorService {
 
     private static final String UNKNOWN_ENVIRONMENT = "unknown";
@@ -45,6 +45,24 @@ public class LogProcessorService {
     private final MLServiceClient mlServiceClient;
     private final AnomalyDetectionRepository anomalyDetectionRepository;
     private final ObjectMapper objectMapper;
+    private final LogProcessorService self;
+    
+    /**
+     * Constructor injection with self-injection for async method calls
+     * @Lazy on self parameter prevents circular dependency and ensures @Async proxy works correctly
+     */
+    public LogProcessorService(
+            ElasticsearchService elasticsearchService,
+            MLServiceClient mlServiceClient,
+            AnomalyDetectionRepository anomalyDetectionRepository,
+            ObjectMapper objectMapper,
+            @Lazy LogProcessorService self) {
+        this.elasticsearchService = elasticsearchService;
+        this.mlServiceClient = mlServiceClient;
+        this.anomalyDetectionRepository = anomalyDetectionRepository;
+        this.objectMapper = objectMapper;
+        this.self = self;
+    }
 
     /**
      * Process a log entry: normalize, enrich, index to Elasticsearch, and detect anomalies
@@ -68,8 +86,8 @@ public class LogProcessorService {
 
             log.debug("Log processed successfully: documentId={}", documentId);
 
-            // Asynchronously detect anomalies
-            detectAnomaliesAsync(documentId, enrichedLog);
+            // Asynchronously detect anomalies via injected dependency
+            self.detectAnomaliesAsync(documentId, enrichedLog);
 
         } catch (Exception e) {
             log.error("Failed to process log: {}", e.getMessage(), e);
@@ -105,10 +123,11 @@ public class LogProcessorService {
                     log.warn("Anomaly detected in log {}: score={}, confidence={}",
                             logId, prediction.getAnomalyScore(), prediction.getConfidence());
                     
-                    // TODO: Trigger alerts for high-confidence anomalies
+                    // Trigger alerts for high-confidence anomalies
                     if (prediction.getConfidence() > 0.7) {
                         log.info("High-confidence anomaly detected (confidence={}), alert should be triggered",
                                 prediction.getConfidence());
+                        // Note: Alert service integration can be added here when alert service is available
                     }
                 }
                 
@@ -128,7 +147,7 @@ public class LogProcessorService {
         try {
             // Prepare features as JSON
             Map<String, Object> features = new HashMap<>();
-            features.put("messageLength", logEntry.getMessage() != null ? logEntry.getMessage().length() : 0);
+            features.put(METADATA_KEY_MESSAGE_LENGTH, logEntry.getMessage() != null ? logEntry.getMessage().length() : 0);
             features.put("level", logEntry.getLevel());
             features.put("service", logEntry.getService());
             features.put(METADATA_KEY_HAS_EXCEPTION, logEntry.getMetadata() != null &&

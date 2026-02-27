@@ -13,7 +13,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Runs on develop and PRs only (NOT on main or tags)
+  # Runs on develop and PRs only (NOT on main or tags training)
   build-and-test:
     runs-on: ubuntu-latest
     if: "!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
@@ -37,9 +37,16 @@ jobs:
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
+      - name: Verify Docker for Testcontainers
+        run: |
+          docker info
+          docker pull postgres:15-alpine
+
       - name: Build, Test and Analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: mvn -B clean verify sonar:sonar
 
       - name: Upload coverage to Codecov
@@ -48,62 +55,178 @@ jobs:
           files: target/site/jacoco/jacoco.xml
           fail_ci_if_error: false
 
+  # CodeQL SAST - runs in parallel with build-and-test
+  sast-codeql:
+    runs-on: ubuntu-latest
+    if: "!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java
+          build-mode: none
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        id: codeql-analysis
+        uses: github/codeql-action/analyze@v4
+
+      - name: Upload CodeQL SARIF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeql-sarif-results
+          path: ${{ steps.codeql-analysis.outputs.sarif-output }}
+          retention-days: 30
+
   # Builds Docker image on develop (with sha) or version tags (with semver)
-  # docker-build:
-  #   needs: [build-and-test]
-  #   if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped')
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     contents: read
-  #     packages: write
-  #   steps:
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Set up JDK 17
-  #       uses: actions/setup-java@v4
-  #       with:
-  #         java-version: '17'
-  #         distribution: 'temurin'
-  #         cache: maven
-  #
-  #     - name: Build JAR
-  #       run: mvn -B clean package -DskipTests
-  #
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
-  #
-  #     - name: Log in to Container Registry
-  #       uses: docker/login-action@v3
-  #       with:
-  #         registry: ${{ env.REGISTRY }}
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-  #
-  #     - name: Extract metadata
-  #       id: meta
-  #       uses: docker/metadata-action@v5
-  #       with:
-  #         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-  #         tags: |
-  #           # For develop: develop, sha-xxxxx
-  #           type=ref,event=branch
-  #           type=sha
-  #           # For tags: v1.0.0 -> 1.0.0, 1.0, 1, latest
-  #           type=semver,pattern={{version}}
-  #           type=semver,pattern={{major}}.{{minor}}
-  #           type=semver,pattern={{major}}
-  #           type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-  #
-  #     - name: Build and push Docker image
-  #       uses: docker/build-push-action@v5
-  #       with:
-  #         context: .
-  #         push: true
-  #         tags: ${{ steps.meta.outputs.tags }}
-  #         labels: ${{ steps.meta.outputs.labels }}
-  #         cache-from: type=gha
-  #         cache-to: type=gha,mode=max
+  docker-build:
+    needs: [build-and-test]
+    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build JAR
+        run: mvn -B clean package -DskipTests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # For develop: develop, sha-xxxxx
+            type=ref,event=branch
+            type=sha
+            # For tags: v1.0.0 -> 1.0.0, 1.0, 1, latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract tag for values.yaml update
+        id: extract-tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Extract version from tag (v1.2.3 -> 1.2.3)
+          TAG_NAME="${{ github.ref_name }}"
+          VERSION="${TAG_NAME#v}"  # Remove 'v' prefix if present
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted tag: $VERSION from $TAG_NAME"
+
+      - name: Trigger values.yaml update
+        if: startsWith(github.ref, 'refs/tags/v') && steps.extract-tag.outputs.tag != ''
+        env:
+          # Try PAT first, fallback to GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          # Use GitHub API to trigger repository_dispatch
+          # Note: If this fails, create a Personal Access Token (PAT) with 'repo' scope
+          # and add it as a secret named 'REPO_DISPATCH_TOKEN'
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{
+              "event_type": "image-pushed",
+              "client_payload": {
+                "tag": "${{ steps.extract-tag.outputs.tag }}",
+                "image": "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}",
+                "ref": "${{ github.ref }}"
+              }
+            }')
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "✓ Repository dispatch triggered successfully for tag: ${{ steps.extract-tag.outputs.tag }}"
+          else
+            echo "⚠ Repository dispatch failed with HTTP $HTTP_CODE"
+            echo "Response: $BODY"
+            echo "Note: The update-image-tag workflow will still trigger via workflow_run after CI/CD completes"
+          fi
+
+  # Trivy container image scanning (Phase 1)
+  image-scan:
+    needs: [docker-build]
+    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && needs.docker-build.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+      packages: read
+    steps:
+      - name: Set image tag for scan
+        id: scan-tag
+        run: |
+          REF="${{ github.ref_name }}"
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${REF#v}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=develop" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.scan-tag.outputs.tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-container'
 
   # Deploys to Kubernetes on main branch push (uses values.yaml tag)
   deploy:

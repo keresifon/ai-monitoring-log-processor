@@ -8,25 +8,79 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.1</version>
+        <version>3.4.13</version>
         <relativePath/>
     </parent>
     
     <groupId>com.ibm.aimonitoring</groupId>
     <artifactId>log-processor</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <name>LogProcessorService</name>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>Log Processor Service</name>
     <description>Log Processor Service for AI Monitoring System</description>
     
     <properties>
         <java.version>17</java.version>
-        <elasticsearch.version>8.11.0</elasticsearch.version>
+        <elasticsearch.version>8.18.0</elasticsearch.version>
+        <postgresql.version>42.7.3</postgresql.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
+        <log4j.version>2.25.0</log4j.version>
+        <netty.version>4.1.131.Final</netty.version>
+        <logback.version>1.5.25</logback.version>
+        <tomcat.version>10.1.52</tomcat.version>
+        <reactor-netty.version>1.2.8</reactor-netty.version>
         <sonar.organization>keresifon</sonar.organization>
+        <sonar.projectKey>keresifon_ai-monitoring-log-processor</sonar.projectKey>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.coverage.jacoco.xmlReportPaths>
             ${project.build.directory}/site/jacoco/jacoco.xml
         </sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.exclusions>
+            **/dto/**,
+            **/model/**,
+            **/LogProcessorServiceApplication.java
+        </sonar.coverage.exclusions>
     </properties>
+    
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Override parsson to fix CVE-2023-4043, CVE-2023-7272 -->
+            <dependency>
+                <groupId>org.eclipse.parsson</groupId>
+                <artifactId>parsson</artifactId>
+                <version>1.1.5</version>
+            </dependency>
+            <!-- Override commons-lang3 to fix CVE-2025-48924 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
+            </dependency>
+            <!-- Override log4j to fix CVE-2025-68161 -->
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Override netty to fix CVE-2025-55163, CVE-2025-24970, CVE-2025-58057, CVE-2025-67735, CVE-2025-25193, CVE-2025-58056 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     
     <dependencies>
         <!-- Spring Boot Web -->
@@ -97,7 +151,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.3.0</version>
+            <version>2.8.7</version>
         </dependency>
         
         <!-- Spring Boot Test -->
@@ -114,6 +168,7 @@
             <scope>test</scope>
         </dependency>
         
+        <!-- Testcontainers BOM is imported in dependencyManagement -->
         <!-- Testcontainers -->
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -125,6 +180,13 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        
+        <!-- Testcontainers RabbitMQ -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
             <scope>test</scope>
         </dependency>
         
@@ -156,6 +218,15 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.11</version>
+                <configuration>
+                    <excludes>
+                        <!-- Exclude DTOs and model classes from coverage (simple data holders) -->
+                        <exclude>**/dto/**</exclude>
+                        <exclude>**/model/**</exclude>
+                        <!-- Exclude application main class -->
+                        <exclude>**/LogProcessorServiceApplication.class</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
@@ -178,8 +249,55 @@
                 <artifactId>sonar-maven-plugin</artifactId>
                 <version>3.10.0.2594</version>
             </plugin>
+
+            <!-- OWASP Dependency-Check for CVE detection
+                 Requires NVD_API_KEY env var for NVD database updates.
+                 Without it, the NVD API rate-limits requests (HTTP 429).
+                 Local: mvn verify -Ddependency-check.skip=true  (skip the check)
+                 CI:    NVD_API_KEY is provided via GitHub secrets -->
+            <plugin>
+                <groupId>org.owasp</groupId>
+                <artifactId>dependency-check-maven</artifactId>
+                <version>12.2.0</version>
+                <configuration>
+                    <failBuildOnCVSS>7</failBuildOnCVSS>
+                    <nvdApiKey>${env.NVD_API_KEY}</nvdApiKey>
+                    <suppressionFiles>
+                        <suppressionFile>dependency-check-suppression.xml</suppressionFile>
+                    </suppressionFiles>
+                    <nvdMaxRetryCount>3</nvdMaxRetryCount>
+                    <failOnError>false</failOnError>
+                    <cveValidForHours>24</cveValidForHours>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>verify</phase>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Run tests with coverage, skip slow dependency-check (useful for local development) -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
 
 <!-- Made with Bob -->

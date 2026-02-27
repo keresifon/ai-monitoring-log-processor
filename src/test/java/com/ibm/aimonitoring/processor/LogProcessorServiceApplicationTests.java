@@ -11,13 +11,17 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.client.RestTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
+
+import java.time.Duration;
 
 /**
  * Integration test for Spring Boot application context.
- * Uses mocked external dependencies to avoid requiring actual services.
- * Uses Testcontainers to provide a PostgreSQL database for testing.
+ * Uses Testcontainers for PostgreSQL and RabbitMQ; mocks Elasticsearch, RestTemplate, and LogConsumer.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -28,7 +32,15 @@ class LogProcessorServiceApplicationTests {
             .withDatabaseName("aimonitoring")
             .withUsername("postgres")
             .withPassword("postgres")
-            .withInitScript("schema.sql");
+            .withInitScript("schema.sql")
+            .waitingFor(Wait.forListeningPort())
+            .withStartupTimeout(Duration.ofMinutes(2));
+
+    @Container
+    static RabbitMQContainer rabbit = new RabbitMQContainer(DockerImageName.parse("rabbitmq:3.12-management-alpine"))
+            .withExposedPorts(5672)
+            .waitingFor(Wait.forListeningPort())
+            .withStartupTimeout(Duration.ofMinutes(2));
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
@@ -38,8 +50,13 @@ class LogProcessorServiceApplicationTests {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.PostgreSQLDialect");
         registry.add("spring.jpa.properties.hibernate.default_schema", () -> "ml_service");
-        registry.add("spring.rabbitmq.host", () -> "localhost");
-        registry.add("spring.rabbitmq.port", () -> "5672");
+        registry.add("spring.rabbitmq.host", rabbit::getHost);
+        registry.add("spring.rabbitmq.port", () -> String.valueOf(rabbit.getAmqpPort()));
+        registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
+        registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
+        // Disable SpringDoc/Swagger to avoid condition processing error in this integration test
+        registry.add("springdoc.api-docs.enabled", () -> "false");
+        registry.add("springdoc.swagger-ui.enabled", () -> "false");
     }
 
     @MockBean
@@ -59,9 +76,10 @@ class LogProcessorServiceApplicationTests {
 
     @Test
     void contextLoads() {
-        // This test verifies that the Spring application context loads successfully
-        // with mocked external dependencies (RabbitMQ, Elasticsearch, RestTemplate)
-        // and a real PostgreSQL database provided by Testcontainers
+        // Verifies that the Spring application context loads with Testcontainers (PostgreSQL, RabbitMQ)
+        // and mocked Elasticsearch, RestTemplate, and LogConsumer
+        org.junit.jupiter.api.Assertions.assertNotNull(postgres, "PostgreSQL container should be initialized");
+        org.junit.jupiter.api.Assertions.assertNotNull(postgres.getJdbcUrl(), "PostgreSQL container should provide JDBC URL");
     }
 }
 
