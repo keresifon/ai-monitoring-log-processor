@@ -30,6 +30,14 @@ resources:
 env:
   SPRING_PROFILES_ACTIVE: kubernetes
   ML_SERVICE_URL: http://ml-service:8000
+  # update = create missing tables on startup; use validate after schema is managed by migrations
+  SPRING_JPA_HIBERNATE_DDL_AUTO: update
+
+database:
+  host: postgres
+  port: 5432
+  name: ai_monitoring
+  schema: log_service
 
 rabbitmq:
   host: rabbitmq
@@ -40,6 +48,9 @@ elasticsearch:
   port: 9200
 
 secrets:
+  # Common secret for DB (db-username, db-password) - created by install-dependencies
+  commonSecretName: ai-monitoring-secrets
+  # RabbitMQ creds - set via --set or values; log-processor-secrets created by this chart
   rabbitmqUsername: ""
   rabbitmqPassword: ""
 
