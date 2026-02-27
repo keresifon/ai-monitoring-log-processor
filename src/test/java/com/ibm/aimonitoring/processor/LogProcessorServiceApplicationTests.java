@@ -49,7 +49,7 @@ class LogProcessorServiceApplicationTests {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.jpa.properties.hibernate.dialect", () -> "org.hibernate.dialect.PostgreSQLDialect");
-        registry.add("spring.jpa.properties.hibernate.default_schema", () -> "ml_service");
+        registry.add("spring.jpa.properties.hibernate.default_schema", () -> "log_service");
         registry.add("spring.rabbitmq.host", rabbit::getHost);
         registry.add("spring.rabbitmq.port", () -> String.valueOf(rabbit.getAmqpPort()));
         registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);

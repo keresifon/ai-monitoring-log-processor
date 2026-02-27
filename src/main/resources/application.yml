@@ -1,7 +1,11 @@
 spring:
   application:
     name: log-processor-service
-  
+
+  sql:
+    init:
+      mode: always  # Run schema.sql before JPA (creates log_service schema)
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/ai_monitoring}
     username: ${DB_USERNAME}
