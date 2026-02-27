@@ -29,16 +29,24 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: {{ .Values.env.SPRING_PROFILES_ACTIVE | quote }}
+            - name: SPRING_JPA_HIBERNATE_DDL_AUTO
+              value: {{ .Values.env.SPRING_JPA_HIBERNATE_DDL_AUTO | default "update" | quote }}
+            - name: DB_URL
+              value: "jdbc:postgresql://{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?currentSchema={{ .Values.database.schema }}"
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.commonSecretName }}
+                  key: db-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.commonSecretName }}
+                  key: db-password
             - name: RABBITMQ_HOST
               value: {{ .Values.rabbitmq.host | quote }}
             - name: RABBITMQ_PORT
               value: {{ .Values.rabbitmq.port | quote }}
-            - name: ELASTICSEARCH_HOST
-              value: {{ .Values.elasticsearch.host | quote }}
-            - name: ELASTICSEARCH_PORT
-              value: {{ .Values.elasticsearch.port | quote }}
-            - name: ML_SERVICE_URL
-              value: {{ .Values.env.ML_SERVICE_URL | quote }}
             - name: RABBITMQ_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -49,6 +57,12 @@ spec:
                 secretKeyRef:
                   name: {{ include "log-processor.fullname" . }}-secrets
                   key: rabbitmq-password
+            - name: ELASTICSEARCH_HOST
+              value: {{ .Values.elasticsearch.host | quote }}
+            - name: ELASTICSEARCH_PORT
+              value: {{ .Values.elasticsearch.port | quote }}
+            - name: ML_SERVICE_URL
+              value: {{ .Values.env.ML_SERVICE_URL | quote }}
           startupProbe:
             {{- toYaml .Values.startupProbe | nindent 12 }}
           livenessProbe:
