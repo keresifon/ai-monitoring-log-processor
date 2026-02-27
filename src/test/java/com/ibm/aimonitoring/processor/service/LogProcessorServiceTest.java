@@ -473,6 +473,26 @@ class LogProcessorServiceTest {
     }
 
     @Test
+    void testEnrichLog_WithConnectKeyword() {
+        // Given - message contains "connect" but not "connection" (covers CONNECT_KEYWORD path)
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .level("ERROR")
+                .message("Failed to connect to database")
+                .service("db-service")
+                .build();
+
+        when(elasticsearchService.indexLog(any(LogEntryDTO.class))).thenReturn("doc-1");
+        when(mlServiceClient.predictAnomaly(anyString(), any(LogEntryDTO.class))).thenReturn(null);
+
+        // When
+        logProcessorService.processLog(logEntry);
+
+        // Then
+        assertTrue((Boolean) logEntry.getMetadata().get("hasConnection"),
+                "Message with 'connect' should set hasConnection=true");
+    }
+
+    @Test
     void testSaveAnomalyDetection_WithRepositoryException() throws JsonProcessingException {
         // Given
         String logId = "log-123";

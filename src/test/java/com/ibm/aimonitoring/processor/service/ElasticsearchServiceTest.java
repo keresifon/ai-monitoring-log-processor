@@ -3,6 +3,12 @@ package com.ibm.aimonitoring.processor.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.Result;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.TotalHitsRelation;
+import co.elastic.clients.elasticsearch.indices.CreateIndexResponse;
+import co.elastic.clients.elasticsearch.indices.ElasticsearchIndicesClient;
+import co.elastic.clients.elasticsearch.indices.ExistsRequest;
 import co.elastic.clients.transport.endpoints.BooleanResponse;
 import com.ibm.aimonitoring.processor.dto.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +23,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -33,6 +40,12 @@ class ElasticsearchServiceTest {
 
     @Mock
     private IndexResponse indexResponse;
+
+    @Mock
+    private ElasticsearchIndicesClient indicesClient;
+
+    @Mock
+    private CreateIndexResponse createIndexResponse;
 
     private ElasticsearchService elasticsearchService;
 
@@ -267,5 +280,208 @@ class ElasticsearchServiceTest {
 
         // Then - should not throw, just log warning
         assertDoesNotThrow(() -> elasticsearchService.init());
+    }
+
+    @Test
+    void testInit_IndexCreated() throws IOException {
+        // Given - index does not exist (service uses Function builder for create)
+        when(elasticsearchClient.indices()).thenReturn(indicesClient);
+        when(indicesClient.exists(any(ExistsRequest.class))).thenReturn(booleanResponse);
+        when(booleanResponse.value()).thenReturn(false);
+        doReturn(createIndexResponse).when(indicesClient).create(any(Function.class));
+        when(createIndexResponse.acknowledged()).thenReturn(true);
+
+        // When
+        elasticsearchService.init();
+
+        // Then
+        verify(indicesClient).exists(any(ExistsRequest.class));
+        verify(indicesClient).create(any(Function.class));
+    }
+
+    @Test
+    void testInit_IndexAlreadyExists() throws IOException {
+        // Given - index already exists
+        when(elasticsearchClient.indices()).thenReturn(indicesClient);
+        when(indicesClient.exists(any(ExistsRequest.class))).thenReturn(booleanResponse);
+        when(booleanResponse.value()).thenReturn(true);
+
+        // When
+        elasticsearchService.init();
+
+        // Then
+        verify(indicesClient).exists(any(ExistsRequest.class));
+        verify(indicesClient, never()).create(any(Function.class));
+    }
+
+    @Test
+    void testSearchLogs_Success() throws IOException {
+        // Given
+        Map<String, Object> sourceDoc = new HashMap<>();
+        sourceDoc.put("timestamp", "2024-01-15T10:30:00Z");
+        sourceDoc.put("level", "ERROR");
+        sourceDoc.put("message", "Test error message");
+        sourceDoc.put("service", "test-service");
+        sourceDoc.put("host", "host1");
+        sourceDoc.put("environment", "prod");
+
+        var hit = Hit.of(h -> h.index("logs").source(sourceDoc));
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h
+                        .total(t -> t.value(1L).relation(TotalHitsRelation.Eq))
+                        .hits(List.of(hit))
+                )
+        );
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        LogSearchRequest request = LogSearchRequest.builder()
+                .page(0)
+                .size(20)
+                .sortBy("timestamp")
+                .sortOrder("desc")
+                .build();
+
+        // When
+        LogSearchResponse response = elasticsearchService.searchLogs(request);
+
+        // Then
+        assertNotNull(response);
+        assertEquals(1, response.getTotal());
+        assertEquals(1, response.getLogs().size());
+        LogEntryDTO logEntry = response.getLogs().get(0);
+        assertEquals("ERROR", logEntry.getLevel());
+        assertEquals("Test error message", logEntry.getMessage());
+        assertEquals("test-service", logEntry.getService());
+    }
+
+    @Test
+    void testSearchLogs_WithFilters() throws IOException {
+        // Given - search with query, levels, services, time range
+        var emptyResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(emptyResponse);
+
+        LogSearchRequest request = LogSearchRequest.builder()
+                .query("error")
+                .levels(List.of("ERROR", "WARN"))
+                .services(List.of("api-gateway"))
+                .startTime(Instant.now().minusSeconds(3600))
+                .endTime(Instant.now())
+                .page(0)
+                .size(10)
+                .sortBy("timestamp")
+                .sortOrder("asc")
+                .build();
+
+        // When
+        LogSearchResponse response = elasticsearchService.searchLogs(request);
+
+        // Then
+        assertNotNull(response);
+        assertEquals(0, response.getTotal());
+    }
+
+    @Test
+    void testGetDashboardMetrics_Success() throws IOException {
+        // Given - 3 search calls: total, error, warning
+        var totalResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(1000L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+        var errorResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(50L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+        var warningResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(100L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class)))
+                .thenReturn(totalResponse, errorResponse, warningResponse);
+
+        // When
+        DashboardMetricsDTO metrics = elasticsearchService.getDashboardMetrics();
+
+        // Then
+        assertNotNull(metrics);
+        assertEquals(1000L, metrics.getTotalLogs());
+        assertEquals(50L, metrics.getErrorCount());
+        assertEquals(100L, metrics.getWarningCount());
+        assertEquals(5.0, metrics.getErrorRate()); // 50/1000 * 100
+        assertEquals(1000.0 / (24 * 60), metrics.getLogsPerMinute());
+    }
+
+    @Test
+    void testConvertToLogEntry_WithMetadata() throws IOException {
+        // Given - document with metadata
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("key", "value");
+        Map<String, Object> sourceDoc = new HashMap<>();
+        sourceDoc.put("timestamp", "2024-01-15T10:30:00Z");
+        sourceDoc.put("level", "INFO");
+        sourceDoc.put("message", "Msg");
+        sourceDoc.put("service", "svc");
+        sourceDoc.put("host", "h");
+        sourceDoc.put("environment", "env");
+        sourceDoc.put("traceId", "t1");
+        sourceDoc.put("spanId", "s1");
+        sourceDoc.put("metadata", metadata);
+
+        var hit = Hit.of(h -> h.index("logs").source(sourceDoc));
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h
+                        .total(t -> t.value(1L).relation(TotalHitsRelation.Eq))
+                        .hits(List.of(hit))
+                )
+        );
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        LogSearchRequest request = LogSearchRequest.builder().page(0).size(10).build();
+
+        // When
+        LogSearchResponse response = elasticsearchService.searchLogs(request);
+
+        // Then
+        assertNotNull(response.getLogs().get(0).getMetadata());
+        assertEquals("value", response.getLogs().get(0).getMetadata().get("key"));
+    }
+
+    @Test
+    void testIndexLog_WithMetadataNull() throws IOException {
+        // Given - log entry without metadata (convertToDocument path)
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .level("INFO")
+                .message("test")
+                .service("svc")
+                .build();
+
+        doReturn(indexResponse).when(elasticsearchClient).index(any(Function.class));
+        when(indexResponse.result()).thenReturn(Result.Created);
+        when(indexResponse.id()).thenReturn("doc-1");
+
+        // When
+        String id = elasticsearchService.indexLog(logEntry);
+
+        // Then
+        assertEquals("doc-1", id);
     }
 }
