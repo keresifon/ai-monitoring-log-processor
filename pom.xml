@@ -280,6 +280,24 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- Run tests with coverage, skip slow dependency-check (useful for local development) -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
 
 <!-- Made with Bob -->

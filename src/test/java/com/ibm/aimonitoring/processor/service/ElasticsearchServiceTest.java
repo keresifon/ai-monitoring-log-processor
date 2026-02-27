@@ -1,7 +1,15 @@
 package com.ibm.aimonitoring.processor.service;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.Result;
+import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.LongTermsAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.LongTermsBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsAggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.AvgAggregate;
 import co.elastic.clients.elasticsearch.core.IndexResponse;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -483,5 +491,357 @@ class ElasticsearchServiceTest {
 
         // Then
         assertEquals("doc-1", id);
+    }
+
+    @Test
+    void testGetLogVolume_Success() throws IOException {
+        // Given - DateHistogramAggregate with keyAsString
+        long epochMillis = Instant.parse("2024-01-15T10:00:00Z").toEpochMilli();
+        var bucket = DateHistogramBucket.of(b -> b
+                .key(epochMillis)
+                .keyAsString("2024-01-15T10:00:00.000Z")
+                .docCount(42));
+        var volumeAgg = DateHistogramAggregate.of(a -> a.buckets(b -> b.array(List.of(bucket))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("volume_over_time", volumeAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        Instant start = Instant.parse("2024-01-15T00:00:00Z");
+        Instant end = Instant.parse("2024-01-15T23:59:59Z");
+
+        // When
+        List<LogVolumeDTO> result = elasticsearchService.getLogVolume(start, end);
+
+        // Then
+        assertEquals(1, result.size());
+        assertEquals(Instant.parse("2024-01-15T10:00:00.000Z"), result.get(0).getTimestamp());
+        assertEquals(42, result.get(0).getCount());
+    }
+
+    @Test
+    void testGetLogVolume_KeyAsStringFallback() throws IOException {
+        // Given - bucket with null keyAsString (fallback to epoch millis)
+        long epochMillis = Instant.parse("2024-01-15T10:00:00Z").toEpochMilli();
+        var bucket = DateHistogramBucket.of(b -> b.key(epochMillis).docCount(5));
+        var volumeAgg = DateHistogramAggregate.of(a -> a.buckets(bk -> bk.array(List.of(bucket))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("volume_over_time", volumeAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        // When
+        List<LogVolumeDTO> result = elasticsearchService.getLogVolume(Instant.EPOCH, Instant.now());
+
+        // Then
+        assertEquals(1, result.size());
+        assertEquals(Instant.ofEpochMilli(epochMillis), result.get(0).getTimestamp());
+        assertEquals(5, result.get(0).getCount());
+    }
+
+    @Test
+    void testGetLogLevelDistribution_Success() throws IOException {
+        // Given - StringTermsAggregate (sterms)
+        var errorBucket = StringTermsBucket.of(b -> b.key(FieldValue.of("ERROR")).docCount(50));
+        var infoBucket = StringTermsBucket.of(b -> b.key(FieldValue.of("INFO")).docCount(100));
+        var levelAgg = StringTermsAggregate.of(a -> a.buckets(b -> b.array(List.of(errorBucket, infoBucket))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("level_distribution", levelAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(150L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        // When
+        List<LogLevelDistributionDTO> result = elasticsearchService.getLogLevelDistribution();
+
+        // Then
+        assertEquals(2, result.size());
+        assertEquals("ERROR", result.get(0).getLevel());
+        assertEquals(50, result.get(0).getCount());
+        assertEquals(100.0 * 50 / 150, result.get(0).getPercentage());
+    }
+
+    @Test
+    void testGetTopServices_Success() throws IOException {
+        // Given - StringTermsAggregate for services
+        var bucket1 = StringTermsBucket.of(b -> b.key(FieldValue.of("api-gateway")).docCount(200));
+        var bucket2 = StringTermsBucket.of(b -> b.key(FieldValue.of("auth-service")).docCount(150));
+        var servicesAgg = StringTermsAggregate.of(a -> a.buckets(b -> b.array(List.of(bucket1, bucket2))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("top_services", servicesAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        // When
+        List<ServiceLogCountDTO> result = elasticsearchService.getTopServices(10);
+
+        // Then
+        assertEquals(2, result.size());
+        assertEquals("api-gateway", result.get(0).getService());
+        assertEquals(200, result.get(0).getCount());
+    }
+
+    @Test
+    void testSearchLogs_ConvertToLogEntry_WithNullFields() throws IOException {
+        // Given - document with null/empty fields (convertToLogEntry branches)
+        Map<String, Object> sourceDoc = new HashMap<>();
+        sourceDoc.put("timestamp", null);
+        sourceDoc.put("level", null);
+        sourceDoc.put("message", null);
+        sourceDoc.put("service", null);
+        sourceDoc.put("host", null);
+        sourceDoc.put("environment", null);
+        sourceDoc.put("traceId", null);
+        sourceDoc.put("spanId", null);
+        sourceDoc.put("metadata", null);
+
+        var hit = Hit.of(h -> h.index("logs").source(sourceDoc));
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(1L).relation(TotalHitsRelation.Eq)).hits(List.of(hit)))
+        );
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        LogSearchRequest request = LogSearchRequest.builder().page(0).size(10).build();
+
+        // When
+        LogSearchResponse response = elasticsearchService.searchLogs(request);
+
+        // Then
+        LogEntryDTO log = response.getLogs().get(0);
+        assertNull(log.getTimestamp());
+        assertNull(log.getLevel());
+        assertNull(log.getMessage());
+        assertNull(log.getService());
+        assertNull(log.getMetadata());
+    }
+
+    @Test
+    void testInit_WithIOException() throws IOException {
+        // Given - exists() throws IOException
+        when(elasticsearchClient.indices()).thenReturn(indicesClient);
+        when(indicesClient.exists(any(ExistsRequest.class))).thenThrow(new IOException("ES unavailable"));
+
+        // When - should not throw (catches and logs)
+        assertDoesNotThrow(elasticsearchService::init);
+    }
+
+    @Test
+    void testGetLogVolume_NoAggregations() throws IOException {
+        // Given - response with no aggregations
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        // When
+        List<LogVolumeDTO> result = elasticsearchService.getLogVolume(Instant.EPOCH, Instant.now());
+
+        // Then
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetLogVolume_AggregationMissingKey() throws IOException {
+        // Given - aggregations exist but volume_over_time key missing
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("other_agg", AvgAggregate.of(a -> a.value(0.0))._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<LogVolumeDTO> result = elasticsearchService.getLogVolume(Instant.EPOCH, Instant.now());
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetLogVolume_NotDateHistogram() throws IOException {
+        // Given - aggregation with wrong type (stats instead of date histogram)
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("volume_over_time", AvgAggregate.of(a -> a.value(0.0))._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<LogVolumeDTO> result = elasticsearchService.getLogVolume(Instant.EPOCH, Instant.now());
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetLogLevelDistribution_WithLterms() throws IOException {
+        // Given - LongTermsAggregate (lterms branch)
+        var bucket1 = LongTermsBucket.of(b -> b.key(1L).docCount(30));
+        var bucket2 = LongTermsBucket.of(b -> b.key(2L).docCount(70));
+        var levelAgg = LongTermsAggregate.of(a -> a.buckets(b -> b.array(List.of(bucket1, bucket2))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("level_distribution", levelAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(100L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<LogLevelDistributionDTO> result = elasticsearchService.getLogLevelDistribution();
+
+        assertEquals(2, result.size());
+        assertEquals("1", result.get(0).getLevel());
+        assertEquals(30, result.get(0).getCount());
+        assertEquals("2", result.get(1).getLevel());
+        assertEquals(70, result.get(1).getCount());
+    }
+
+    @Test
+    void testGetLogLevelDistribution_NoAggregations() throws IOException {
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<LogLevelDistributionDTO> result = elasticsearchService.getLogLevelDistribution();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetLogLevelDistribution_NotTerms() throws IOException {
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("level_distribution", AvgAggregate.of(a -> a.value(0.0))._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(100L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<LogLevelDistributionDTO> result = elasticsearchService.getLogLevelDistribution();
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetTopServices_WithLterms() throws IOException {
+        var bucket1 = LongTermsBucket.of(b -> b.key(100L).docCount(80));
+        var bucket2 = LongTermsBucket.of(b -> b.key(200L).docCount(50));
+        var servicesAgg = LongTermsAggregate.of(a -> a.buckets(b -> b.array(List.of(bucket1, bucket2))));
+
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("top_services", servicesAgg._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<ServiceLogCountDTO> result = elasticsearchService.getTopServices(10);
+
+        assertEquals(2, result.size());
+        assertEquals("100", result.get(0).getService());
+        assertEquals(80, result.get(0).getCount());
+    }
+
+    @Test
+    void testGetTopServices_NoAggregations() throws IOException {
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+        );
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<ServiceLogCountDTO> result = elasticsearchService.getTopServices(5);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void testGetTopServices_NotTerms() throws IOException {
+        var aggMap = new HashMap<String, co.elastic.clients.elasticsearch._types.aggregations.Aggregate>();
+        aggMap.put("top_services", AvgAggregate.of(a -> a.value(0.0))._toAggregate());
+
+        var searchResponse = SearchResponse.of(s -> s
+                .took(0)
+                .timedOut(false)
+                .shards(sh -> sh.total(1).failed(0).successful(1))
+                .hits(h -> h.total(t -> t.value(0L).relation(TotalHitsRelation.Eq)).hits(List.of()))
+                .aggregations(aggMap));
+
+        when(elasticsearchClient.search(any(Function.class), eq(Map.class))).thenReturn(searchResponse);
+
+        List<ServiceLogCountDTO> result = elasticsearchService.getTopServices(10);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 }

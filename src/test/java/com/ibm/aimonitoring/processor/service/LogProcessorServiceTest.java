@@ -265,7 +265,38 @@ class LogProcessorServiceTest {
 
         // Then
         verify(anomalyDetectionRepository).save(any(AnomalyDetection.class));
-        // High confidence anomaly should trigger alert log
+        // High confidence anomaly should trigger alert log (confidence > 0.7)
+    }
+
+    @Test
+    void testDetectAnomaliesAsync_WithNullMetadataAndPrediction() throws JsonProcessingException {
+        // Given - logEntry has null metadata, prediction is non-null (covers logEntry.getMetadata() == null branch)
+        String logId = "log-123";
+        LogEntryDTO logEntry = LogEntryDTO.builder()
+                .message("Test message")
+                .level("ERROR")
+                .service("test")
+                .metadata(null)
+                .build();
+
+        MLPredictionResponse prediction = MLPredictionResponse.builder()
+                .isAnomaly(true)
+                .anomalyScore(0.80)
+                .confidence(0.75)
+                .modelVersion("v1.0")
+                .build();
+
+        when(mlServiceClient.predictAnomaly(eq(logId), any(LogEntryDTO.class))).thenReturn(prediction);
+        when(objectMapper.writeValueAsString(any(Map.class))).thenReturn("{}");
+        when(anomalyDetectionRepository.save(any(AnomalyDetection.class))).thenReturn(new AnomalyDetection());
+
+        // When
+        logProcessorService.detectAnomaliesAsync(logId, logEntry);
+
+        // Then - metadata should be initialized and populated
+        assertNotNull(logEntry.getMetadata());
+        assertEquals(true, logEntry.getMetadata().get("anomalyDetected"));
+        assertEquals(0.80, logEntry.getMetadata().get("anomalyScore"));
     }
 
     @Test
