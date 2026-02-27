@@ -50,12 +50,12 @@ spec:
             - name: RABBITMQ_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "log-processor.fullname" . }}-secrets
+                  name: {{ .Values.secrets.commonSecretName }}
                   key: rabbitmq-username
             - name: RABBITMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "log-processor.fullname" . }}-secrets
+                  name: {{ .Values.secrets.commonSecretName }}
                   key: rabbitmq-password
             - name: ELASTICSEARCH_HOST
               value: {{ .Values.elasticsearch.host | quote }}

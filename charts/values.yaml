@@ -48,11 +48,9 @@ elasticsearch:
   port: 9200
 
 secrets:
-  # Common secret for DB (db-username, db-password) - created by install-dependencies
+  # All credentials from ai-monitoring-secrets (deployed by install-dependencies before microservices)
+  # Keys: db-username, db-password, rabbitmq-username, rabbitmq-password
   commonSecretName: ai-monitoring-secrets
-  # RabbitMQ creds - set via --set or values; log-processor-secrets created by this chart
-  rabbitmqUsername: ""
-  rabbitmqPassword: ""
 
 startupProbe:
   # Give Spring Boot up to ~3 min to start before failing (RabbitMQ/ES/ML dependencies)
