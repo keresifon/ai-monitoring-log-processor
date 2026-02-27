@@ -1,4 +1,4 @@
-replicaCount: 2
+replicaCount: 1
 
 image:
   repository: ghcr.io/keresifon/ai-monitoring-log-processor
@@ -10,7 +10,8 @@ nameOverride: ""
 fullnameOverride: ""
 
 serviceAccount:
-  create: true
+  # Use default SA (chart has no serviceaccount template). Set create+template if custom SA needed.
+  create: false
   annotations: {}
   name: ""
 
@@ -42,16 +43,30 @@ secrets:
   rabbitmqUsername: ""
   rabbitmqPassword: ""
 
+startupProbe:
+  # Give Spring Boot up to ~3 min to start before failing (RabbitMQ/ES/ML dependencies)
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 24
+
 livenessProbe:
   httpGet:
     path: /actuator/health/liveness
     port: http
-  initialDelaySeconds: 60
-  periodSeconds: 10
+  initialDelaySeconds: 0  # startupProbe runs first
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 5
 
 readinessProbe:
   httpGet:
     path: /actuator/health/readiness
     port: http
-  initialDelaySeconds: 30
-  periodSeconds: 5
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6

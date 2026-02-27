@@ -288,8 +288,8 @@ jobs:
 
       - name: Verify deployment
         run: |
-          echo "Checking deployment status..."
-          kubectl rollout status deployment/log-processor -n ai-monitoring --timeout=2m
+          echo "Checking deployment status (timeout 5m - log-processor has RabbitMQ/ES/ML dependencies)..."
+          kubectl rollout status deployment/log-processor -n ai-monitoring --timeout=5m
           echo ""
           echo "Pods:"
           kubectl get pods -n ai-monitoring -l app.kubernetes.io/name=log-processor -o wide
