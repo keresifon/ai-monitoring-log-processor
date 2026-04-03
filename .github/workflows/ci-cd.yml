@@ -7,16 +7,85 @@ on:
       - 'v*'
   pull_request:
     branches: [main, develop]
+  issue_comment:
+    types: [created]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Runs on develop and PRs only (NOT on main or tags training)
+  detect-deployment-target:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/deploy')
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    outputs:
+      target: ${{ steps.parse.outputs.target }}
+      pr_ref: ${{ steps.pr.outputs.ref }}
+      pr_sha: ${{ steps.pr.outputs.sha }}
+    steps:
+      - name: Check if commenter has write access
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: context.payload.comment.user.login
+            });
+            if (!['admin', 'write'].includes(permission.permission)) {
+              core.setFailed('Only users with write access can trigger deployments');
+            }
+
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const sha = pr.data.merged ? pr.data.merge_commit_sha : pr.data.head.sha;
+            const ref = pr.data.merged ? pr.data.base.ref : pr.data.head.ref;
+            core.setOutput('ref', ref);
+            core.setOutput('sha', sha);
+
+      - name: Parse deployment target
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          if echo "$COMMENT_BODY" | grep -qiE '^/deploy\s+(aks|openshift|oc)\s*$'; then
+            TARGET=$(echo "$COMMENT_BODY" | grep -oiE '(aks|openshift|oc)' | head -1 | tr '[:upper:]' '[:lower:]')
+            if [ "$TARGET" = "oc" ]; then
+              TARGET="openshift"
+            fi
+            echo "target=$TARGET" >> $GITHUB_OUTPUT
+          else
+            echo "Invalid deployment command. Use: /deploy aks or /deploy openshift"
+            exit 1
+          fi
+
+      - name: Add reaction to comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+  # Runs on develop and PRs only (NOT on main or tags)
   build-and-test:
     runs-on: ubuntu-latest
-    if: "!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
+    if: "github.event_name != 'issue_comment' && !startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -58,7 +127,7 @@ jobs:
   # CodeQL SAST - runs in parallel with build-and-test
   sast-codeql:
     runs-on: ubuntu-latest
-    if: "!startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
+    if: "github.event_name != 'issue_comment' && !startsWith(github.ref, 'refs/tags/') && github.ref != 'refs/heads/main'"
     permissions:
       security-events: write
       actions: read
@@ -90,7 +159,7 @@ jobs:
   # Builds Docker image on develop (with sha) or version tags (with semver)
   docker-build:
     needs: [build-and-test]
-    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped')
+    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && github.event_name != 'issue_comment' && (needs.build-and-test.result == 'success' || needs.build-and-test.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -157,6 +226,7 @@ jobs:
       - name: Trigger values.yaml update
         if: startsWith(github.ref, 'refs/tags/v') && steps.extract-tag.outputs.tag != ''
         env:
+          # Try PAT first, fallback to GITHUB_TOKEN
           GITHUB_TOKEN: ${{ secrets.REPO_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
@@ -186,7 +256,7 @@ jobs:
   # Trivy container image scanning
   image-scan:
     needs: [docker-build]
-    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && needs.docker-build.result == 'success'
+    if: always() && (github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v')) && github.event_name == 'push' && github.event_name != 'issue_comment' && needs.docker-build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -212,7 +282,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.scan-tag.outputs.tag }}'
           format: 'sarif'
@@ -263,19 +333,23 @@ jobs:
       - name: Ensure ai-monitoring-secrets exists
         run: |
           if ! kubectl get secret ai-monitoring-secrets -n ai-monitoring 2>/dev/null; then
-            echo "::error::Secret ai-monitoring-secrets not found. Run install-dependencies.sh first:"
-            echo "  DB_PASSWORD='<secure-password>' ./deployments/install-dependencies.sh"
+            echo "::error::Secret ai-monitoring-secrets not found. Install platform deps from the infrastructure repo (deployments/install-dependencies.sh) first."
             exit 1
           fi
           echo "Secret ai-monitoring-secrets exists."
 
       - name: Clear stuck Helm release (if any)
         run: |
-          # Resolve "another operation is in progress" from interrupted previous deploy
+          # Helm blocks upgrade while status is pending-* (interrupted install/upgrade/rollback)
           if helm list -n ai-monitoring 2>/dev/null | grep -q log-processor; then
-            echo "Clearing any pending Helm operation..."
-            helm rollback log-processor -n ai-monitoring 2>/dev/null || true
-            sleep 5
+            STATUS=$(helm status log-processor -n ai-monitoring 2>/dev/null | awk '/^STATUS:/{print $2}')
+            echo "Helm release status: ${STATUS:-unknown}"
+            case "$STATUS" in
+              pending-install|pending-upgrade|pending-rollback)
+                echo "Rolling back to clear stuck operation..."
+                helm rollback log-processor -n ai-monitoring --wait --timeout 5m
+                ;;
+            esac
           fi
 
       - name: Deploy with Helm
@@ -288,8 +362,8 @@ jobs:
 
       - name: Verify deployment
         run: |
-          echo "Checking deployment status (timeout 5m - log-processor has RabbitMQ/ES/ML dependencies)..."
-          kubectl rollout status deployment/log-processor -n ai-monitoring --timeout=5m
+          echo "Checking deployment status..."
+          kubectl rollout status deployment/log-processor -n ai-monitoring --timeout=2m
           echo ""
           echo "Pods:"
           kubectl get pods -n ai-monitoring -l app.kubernetes.io/name=log-processor -o wide
@@ -309,8 +383,237 @@ jobs:
           echo "=== Pod logs (if any) ==="
           kubectl logs -n ai-monitoring -l app.kubernetes.io/name=log-processor --tail=100 --all-containers=true 2>/dev/null || true
 
+  deploy-openshift:
+    needs: [detect-deployment-target]
+    runs-on: oc-run
+    if: needs.detect-deployment-target.outputs.target == 'openshift'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code at PR SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect-deployment-target.outputs.pr_sha }}
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # TLS: use org/repo secret OPENSHIFT_CA_BUNDLE (PEM) + --certificate-authority, or omit it to use --insecure-skip-tls-verify (e.g. CRC / internal CAs not in runner trust store)
+      - name: Login to OpenShift
+        env:
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_PROJECT: ${{ secrets.OPENSHIFT_PROJECT }}
+          OPENSHIFT_CA_BUNDLE: ${{ secrets.OPENSHIFT_CA_BUNDLE }}
+        run: |
+          if [ -n "$OPENSHIFT_CA_BUNDLE" ]; then
+            printf '%s\n' "$OPENSHIFT_CA_BUNDLE" > /tmp/openshift-ca.crt
+            oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER" --certificate-authority=/tmp/openshift-ca.crt
+          else
+            oc login --token="$OPENSHIFT_TOKEN" --server="$OPENSHIFT_SERVER" --insecure-skip-tls-verify
+          fi
+          oc project "$OPENSHIFT_PROJECT"
+
+      - name: Ensure ai-monitoring-secrets exists
+        run: |
+          if ! oc get secret ai-monitoring-secrets -n ${{ secrets.OPENSHIFT_PROJECT }} 2>/dev/null; then
+            echo "::error::Secret ai-monitoring-secrets not found in namespace ${{ secrets.OPENSHIFT_PROJECT }}."
+            exit 1
+          fi
+
+      - name: Clear stuck Helm release (if any)
+        run: |
+          NS="${{ secrets.OPENSHIFT_PROJECT }}"
+          if helm list -n "$NS" 2>/dev/null | grep -q log-processor; then
+            STATUS=$(helm status log-processor -n "$NS" 2>/dev/null | awk '/^STATUS:/{print $2}')
+            echo "Helm release status: ${STATUS:-unknown}"
+            case "$STATUS" in
+              pending-install|pending-upgrade|pending-rollback)
+                echo "Rolling back to clear stuck operation..."
+                helm rollback log-processor -n "$NS" --wait --timeout 5m
+                ;;
+            esac
+          fi
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install log-processor ./charts \
+            --namespace ${{ secrets.OPENSHIFT_PROJECT }} \
+            -f charts/values.yaml \
+            --set openshift.enabled=true \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          echo "Checking deployment status..."
+          oc rollout status deployment/log-processor -n ${{ secrets.OPENSHIFT_PROJECT }} --timeout=3m
+          echo ""
+          echo "Pods:"
+          oc get pods -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor -o wide
+          echo ""
+          echo "Services:"
+          oc get svc -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor
+          echo ""
+          echo "Routes:"
+          oc get route -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor
+
+      - name: Get Route URL
+        id: route
+        run: |
+          ROUTE_URL=$(oc get route log-processor -n ${{ secrets.OPENSHIFT_PROJECT }} -o jsonpath='{.spec.host}')
+          echo "url=https://$ROUTE_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR with deployment info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const routeUrl = '${{ steps.route.outputs.url }}';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ Successfully deployed to OpenShift!\n\n**Route URL:** ${routeUrl}\n**Namespace:** ${{ secrets.OPENSHIFT_PROJECT }}\n**Commit:** ${{ needs.detect-deployment-target.outputs.pr_sha }}`
+            });
+
+      - name: Debug pod (on failure)
+        if: failure()
+        run: |
+          oc get pods -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor -o wide || true
+          oc describe pods -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor || true
+          oc logs -n ${{ secrets.OPENSHIFT_PROJECT }} -l app.kubernetes.io/name=log-processor --tail=100 --all-containers=true 2>/dev/null || true
+
+      - name: Comment on PR with failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ OpenShift deployment failed. Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`
+            });
+
+  deploy-aks-pr:
+    needs: [detect-deployment-target]
+    runs-on: ubuntu-latest
+    if: needs.detect-deployment-target.outputs.target == 'aks'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code at PR SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.detect-deployment-target.outputs.pr_sha }}
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.13.0
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.28.0'
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ secrets.AKS_RESOURCE_GROUP }} \
+            --name ${{ secrets.AKS_CLUSTER_NAME }} \
+            --overwrite-existing
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ai-monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Ensure ai-monitoring-secrets exists
+        run: |
+          if ! kubectl get secret ai-monitoring-secrets -n ai-monitoring 2>/dev/null; then
+            echo "::error::Secret ai-monitoring-secrets not found. Install platform deps from the infrastructure repo (deployments/install-dependencies.sh) first."
+            exit 1
+          fi
+
+      - name: Clear stuck Helm release (if any)
+        run: |
+          if helm list -n ai-monitoring 2>/dev/null | grep -q log-processor; then
+            STATUS=$(helm status log-processor -n ai-monitoring 2>/dev/null | awk '/^STATUS:/{print $2}')
+            echo "Helm release status: ${STATUS:-unknown}"
+            case "$STATUS" in
+              pending-install|pending-upgrade|pending-rollback)
+                echo "Rolling back to clear stuck operation..."
+                helm rollback log-processor -n ai-monitoring --wait --timeout 5m
+                ;;
+            esac
+          fi
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install log-processor ./charts \
+            --namespace ai-monitoring \
+            --create-namespace \
+            -f charts/values.yaml \
+            --wait \
+            --timeout 5m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/log-processor -n ai-monitoring --timeout=3m
+          kubectl get pods -n ai-monitoring -l app.kubernetes.io/name=log-processor -o wide
+          kubectl get svc -n ai-monitoring -l app.kubernetes.io/name=log-processor
+
+      - name: Comment on PR with deployment info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ Successfully deployed to AKS!\n\n**Namespace:** ai-monitoring\n**Commit:** ${{ needs.detect-deployment-target.outputs.pr_sha }}`
+            });
+
+      - name: Debug pod (on failure)
+        if: failure()
+        run: |
+          kubectl get pods -n ai-monitoring -l app.kubernetes.io/name=log-processor -o wide || true
+          kubectl describe pods -n ai-monitoring -l app.kubernetes.io/name=log-processor || true
+          kubectl logs -n ai-monitoring -l app.kubernetes.io/name=log-processor --tail=100 --all-containers=true 2>/dev/null || true
+
+      - name: Comment on PR with failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `❌ AKS deployment failed. Check the [workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.`
+            });
+
   helm-lint:
     runs-on: ubuntu-latest
+    if: github.event_name != 'issue_comment'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
