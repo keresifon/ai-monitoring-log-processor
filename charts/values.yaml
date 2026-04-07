@@ -52,6 +52,10 @@ elasticsearch:
   ssl:
     insecure: true
     caBundlePath: ""
+  # Keys in ai-monitoring-secrets (Bitnami / GitHub deploy workflow).
+  auth:
+    usernameKey: elasticsearch-username
+    passwordKey: elasticsearch-password
 
 secrets:
   # All credentials from ai-monitoring-secrets (deployed by install-dependencies before microservices)

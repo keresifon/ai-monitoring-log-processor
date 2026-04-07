@@ -58,6 +58,9 @@ elasticsearch:
   port: ${ELASTICSEARCH_PORT:9200}
   # Use https when Elasticsearch has TLS (e.g. xpack.security.http.ssl.enabled); plaintext on https port closes the connection.
   scheme: ${ELASTICSEARCH_SCHEME:http}
+  # HTTP Basic auth when xpack/Bitnami security is enabled (same secret as Elasticsearch chart: elastic user).
+  username: ${ELASTICSEARCH_USERNAME:}
+  password: ${ELASTICSEARCH_PASSWORD:}
   # PEM file with CA cert(s) for private/auto-generated Elasticsearch TLS (e.g. Bitnami). Alternative: insecure (dev only).
   ssl:
     ca-bundle-path: ${ELASTICSEARCH_SSL_CA_BUNDLE_PATH:}
