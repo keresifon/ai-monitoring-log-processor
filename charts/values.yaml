@@ -47,7 +47,7 @@ elasticsearch:
   host: elasticsearch
   port: 9200
   # Set to https when the cluster serves TLS (matches xpack.security.http.ssl).
-  scheme: http
+  scheme: https
 
 secrets:
   # All credentials from ai-monitoring-secrets (deployed by install-dependencies before microservices)
