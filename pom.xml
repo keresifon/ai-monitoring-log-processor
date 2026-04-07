@@ -20,6 +20,10 @@
     
     <properties>
         <java.version>17</java.version>
+        <!-- Align with Spring Boot BOM overrides: CVE-2026-22735 (SSE), CVE-2026-22737 (script template views) -->
+        <spring-framework.version>6.2.17</spring-framework.version>
+        <!-- GHSA-72hv-8253-57qq: async JSON parser must enforce maxNumberLength -->
+        <jackson-bom.version>2.18.6</jackson-bom.version>
         <elasticsearch.version>8.18.0</elasticsearch.version>
         <postgresql.version>42.7.3</postgresql.version>
         <testcontainers.version>1.21.4</testcontainers.version>

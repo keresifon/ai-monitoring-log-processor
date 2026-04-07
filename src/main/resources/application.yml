@@ -58,7 +58,6 @@ elasticsearch:
   port: ${ELASTICSEARCH_PORT:9200}
   connect-timeout-ms: 10000
   socket-timeout-ms: 120000
-  validate-after-inactivity-ms: 10000
   index:
     name: logs
     shards: 1
