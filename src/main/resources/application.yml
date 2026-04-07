@@ -58,6 +58,10 @@ elasticsearch:
   port: ${ELASTICSEARCH_PORT:9200}
   # Use https when Elasticsearch has TLS (e.g. xpack.security.http.ssl.enabled); plaintext on https port closes the connection.
   scheme: ${ELASTICSEARCH_SCHEME:http}
+  # PEM file with CA cert(s) for private/auto-generated Elasticsearch TLS (e.g. Bitnami). Alternative: insecure (dev only).
+  ssl:
+    ca-bundle-path: ${ELASTICSEARCH_SSL_CA_BUNDLE_PATH:}
+    insecure: ${ELASTICSEARCH_SSL_INSECURE:false}
   connect-timeout-ms: 10000
   socket-timeout-ms: 120000
   index:

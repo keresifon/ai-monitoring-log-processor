@@ -48,6 +48,10 @@ elasticsearch:
   port: 9200
   # Set to https when the cluster serves TLS (matches xpack.security.http.ssl).
   scheme: https
+  # Bitnami auto-generated TLS: trust CA via mounted PEM (caBundlePath) or insecure=true (dev only).
+  ssl:
+    insecure: true
+    caBundlePath: ""
 
 secrets:
   # All credentials from ai-monitoring-secrets (deployed by install-dependencies before microservices)
