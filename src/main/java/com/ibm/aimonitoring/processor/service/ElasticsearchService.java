@@ -15,6 +15,7 @@ import com.ibm.aimonitoring.processor.dto.*;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.http.ConnectionClosedException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -58,6 +59,51 @@ public class ElasticsearchService {
     @Value("${elasticsearch.index.replicas:0}")
     private int numberOfReplicas;
 
+    @FunctionalInterface
+    private interface EsIoSupplier<T> {
+        T get() throws IOException;
+    }
+
+    /**
+     * Apache HttpClient may reuse a pooled connection that the server or load balancer already
+     * closed; the next request then fails with {@link ConnectionClosedException}. Retry once.
+     */
+    private <T> T withStaleConnectionRetry(EsIoSupplier<T> supplier) throws IOException {
+        try {
+            return supplier.get();
+        } catch (IOException e) {
+            if (isStaleHttpConnection(e)) {
+                log.warn("Retrying Elasticsearch request after stale HTTP connection: {}", e.getMessage());
+                return supplier.get();
+            }
+            throw e;
+        } catch (RuntimeException e) {
+            if (isStaleHttpConnection(e)) {
+                log.warn("Retrying Elasticsearch request after stale HTTP connection: {}", e.getMessage());
+                try {
+                    return supplier.get();
+                } catch (IOException ioe) {
+                    throw ioe;
+                }
+            }
+            throw e;
+        }
+    }
+
+    private static boolean isStaleHttpConnection(Throwable t) {
+        while (t != null) {
+            if (t instanceof ConnectionClosedException) {
+                return true;
+            }
+            String msg = t.getMessage();
+            if (msg != null && msg.contains("Connection is closed")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
     /**
      * Initialize Elasticsearch index on startup
      */
@@ -83,13 +129,13 @@ public class ElasticsearchService {
             throw new IOException("Elasticsearch client is not available");
         }
         
-        BooleanResponse exists = elasticsearchClient.indices()
-                .exists(ExistsRequest.of(e -> e.index(indexName)));
+        BooleanResponse exists = withStaleConnectionRetry(() -> elasticsearchClient.indices()
+                .exists(ExistsRequest.of(e -> e.index(indexName))));
 
         if (!exists.value()) {
             log.info("Creating Elasticsearch index: {}", indexName);
             
-            CreateIndexResponse response = elasticsearchClient.indices()
+            CreateIndexResponse response = withStaleConnectionRetry(() -> elasticsearchClient.indices()
                     .create(c -> c
                             .index(indexName)
                             .settings(s -> s
@@ -107,7 +153,7 @@ public class ElasticsearchService {
                                     .properties(FIELD_SPAN_ID, p -> p.keyword(k -> k))
                                     .properties(FIELD_METADATA, p -> p.object(o -> o.enabled(true)))
                             )
-                    );
+                    ));
 
             log.info("Index created: {}, acknowledged: {}", indexName, response.acknowledged());
         } else {
@@ -127,10 +173,10 @@ public class ElasticsearchService {
             Map<String, Object> document = convertToDocument(logEntry);
 
             // Index the document
-            IndexResponse response = elasticsearchClient.index(i -> i
+            IndexResponse response = withStaleConnectionRetry(() -> elasticsearchClient.index(i -> i
                     .index(indexName)
                     .document(document)
-            );
+            ));
 
             if (response.result() == Result.Created || response.result() == Result.Updated) {
                 log.debug("Log indexed successfully: {}", response.id());
@@ -175,7 +221,7 @@ public class ElasticsearchService {
      */
     public boolean isAvailable() {
         try {
-            return elasticsearchClient.ping().value();
+            return withStaleConnectionRetry(() -> elasticsearchClient.ping().value());
         } catch (IOException e) {
             log.error("Elasticsearch ping failed: {}", e.getMessage());
             return false;
@@ -191,10 +237,11 @@ public class ElasticsearchService {
     public LogSearchResponse searchLogs(LogSearchRequest request) {
         try {
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> response = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> {
-                buildSearchRequest(s, request);
-                return s;
-            }, Map.class);
+            SearchResponse<Map<String, Object>> response = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> {
+                        buildSearchRequest(s, request);
+                        return s;
+                    }, Map.class));
 
             return buildSearchResponse(response, request);
 
@@ -326,31 +373,34 @@ public class ElasticsearchService {
         try {
             // Get total logs count
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> totalResponse = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> totalResponse = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .query(q -> q.matchAll(m -> m))
-            , Map.class);
+            , Map.class));
             
             long totalLogs = totalResponse.hits().total().value();
             
             // Get error count
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> errorResponse = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> errorResponse = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .query(q -> q.term(t -> t.field(FIELD_LEVEL).value("ERROR")))
-            , Map.class);
+            , Map.class));
             
             long errorCount = errorResponse.hits().total().value();
             
             // Get warning count
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> warningResponse = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> warningResponse = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .query(q -> q.term(t -> t.field(FIELD_LEVEL).value("WARN")))
-            , Map.class);
+            , Map.class));
             
             long warningCount = warningResponse.hits().total().value();
             
@@ -386,7 +436,8 @@ public class ElasticsearchService {
     public List<LogVolumeDTO> getLogVolume(Instant startTime, Instant endTime) {
         try {
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> response = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> response = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .query(q -> q.range(r -> r.date(d -> d
@@ -401,7 +452,7 @@ public class ElasticsearchService {
                         .minDocCount(0)
                     )
                 )
-            , Map.class);
+            , Map.class));
             
             if (response.aggregations() == null || !response.aggregations().containsKey(AGG_VOLUME_OVER_TIME)) {
                 log.warn("No volume_over_time aggregation found in response");
@@ -452,13 +503,14 @@ public class ElasticsearchService {
     public List<LogLevelDistributionDTO> getLogLevelDistribution() {
         try {
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> response = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> response = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .aggregations(AGG_LEVEL_DISTRIBUTION, a -> a
                     .terms(t -> t.field(FIELD_LEVEL))
                 )
-            , Map.class);
+            , Map.class));
             
             long totalLogs = response.hits().total().value();
             log.debug("Total logs for level distribution: {}", totalLogs);
@@ -520,7 +572,8 @@ public class ElasticsearchService {
     public List<ServiceLogCountDTO> getTopServices(int limit) {
         try {
             @SuppressWarnings("unchecked")
-            SearchResponse<Map<String, Object>> response = (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
+            SearchResponse<Map<String, Object>> response = withStaleConnectionRetry(() ->
+                    (SearchResponse<Map<String, Object>>) (SearchResponse<?>) elasticsearchClient.search(s -> s
                 .index(indexName)
                 .size(0)
                 .aggregations(AGG_TOP_SERVICES, a -> a
@@ -529,7 +582,7 @@ public class ElasticsearchService {
                         .size(limit)
                     )
                 )
-            , Map.class);
+            , Map.class));
             
             if (response.aggregations() == null || !response.aggregations().containsKey(AGG_TOP_SERVICES)) {
                 log.warn("No top_services aggregation found in response");
