@@ -56,7 +56,7 @@
     <suppress until="2026-05-18Z">
         <notes><![CDATA[
         Netty transport is used as HTTP client by Elasticsearch/WebClient. CPE mapping may overmatch.
-        Using netty-bom 4.1.118.Final. Review when newer patched versions are available.
+        Using netty-bom 4.1.132.Final. Review when newer patched versions are available.
         ]]></notes>
         <packageUrl regex="true">^pkg:maven/io\.netty/netty\-.*@.*$</packageUrl>
         <cve>CVE-2025-55163</cve>
