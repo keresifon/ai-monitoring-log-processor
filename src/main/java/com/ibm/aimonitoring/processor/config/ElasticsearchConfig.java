@@ -16,6 +16,9 @@ import org.springframework.context.annotation.Configuration;
  * Elasticsearch configuration. Tunes the low-level HTTP client (Apache HttpClient 4.x
  * used by Elasticsearch {@code RestClient}): TCP keep-alive and request timeouts help
  * when load balancers or Elasticsearch close idle connections.
+ * <p>
+ * {@code elasticsearch.scheme} must match the server (HTTP vs HTTPS); TLS endpoints will
+ * close plaintext connections, which surfaces as {@code ConnectionClosedException} on the client.
  */
 @Configuration
 public class ElasticsearchConfig {
@@ -24,10 +27,17 @@ public class ElasticsearchConfig {
     public RestClient restClient(
             @Value("${elasticsearch.host:localhost}") String host,
             @Value("${elasticsearch.port:9200}") int port,
+            @Value("${elasticsearch.scheme:http}") String scheme,
             @Value("${elasticsearch.connect-timeout-ms:10000}") int connectTimeoutMs,
             @Value("${elasticsearch.socket-timeout-ms:120000}") int socketTimeoutMs) {
 
-        return RestClient.builder(new HttpHost(host, port, "http"))
+        String normalizedScheme = scheme == null ? "http" : scheme.trim().toLowerCase();
+        if (!"http".equals(normalizedScheme) && !"https".equals(normalizedScheme)) {
+            throw new IllegalArgumentException(
+                    "elasticsearch.scheme must be 'http' or 'https', got: " + scheme);
+        }
+
+        return RestClient.builder(new HttpHost(host, port, normalizedScheme))
                 .setHttpClientConfigCallback((HttpAsyncClientBuilder builder) -> {
                     builder.setDefaultIOReactorConfig(
                             IOReactorConfig.custom()

@@ -61,6 +61,8 @@ spec:
               value: {{ .Values.elasticsearch.host | quote }}
             - name: ELASTICSEARCH_PORT
               value: {{ .Values.elasticsearch.port | quote }}
+            - name: ELASTICSEARCH_SCHEME
+              value: {{ .Values.elasticsearch.scheme | quote }}
             - name: ML_SERVICE_URL
               value: {{ .Values.env.ML_SERVICE_URL | quote }}
           startupProbe:
