@@ -75,8 +75,10 @@ public class LogSearchController {
 
     /**
      * Export matching logs as CSV (bounded by {@link #EXPORT_MAX_ROWS}).
+     * Do not use {@code produces = "text/csv"}: browsers/Angular often send {@code Accept: application/json},
+     * which triggers 406 Not Acceptable when the handler only declares {@code text/csv}.
      */
-    @GetMapping(value = "/export/csv", produces = "text/csv")
+    @GetMapping("/export/csv")
     public ResponseEntity<byte[]> exportCsv(
             @RequestParam(required = false) String level,
             @RequestParam(required = false) String service,
