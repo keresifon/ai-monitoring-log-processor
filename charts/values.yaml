@@ -34,7 +34,7 @@ env:
   SPRING_JPA_HIBERNATE_DDL_AUTO: update
 
 database:
-  host: postgres
+  host: postgres-hl
   port: 5432
   name: ai_monitoring
   schema: log_service
