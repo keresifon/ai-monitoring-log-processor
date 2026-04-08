@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/keresifon/ai-monitoring-log-processor
+  repository: ghcr.io/kere-sifon/ai-monitoring-log-processor
   pullPolicy: IfNotPresent
-  tag: "1.0.2"
+  tag: "1.1.0"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -34,7 +34,7 @@ env:
   SPRING_JPA_HIBERNATE_DDL_AUTO: update
 
 database:
-  host: postgres
+  host: postgres-hl
   port: 5432
   name: ai_monitoring
   schema: log_service
@@ -46,6 +46,16 @@ rabbitmq:
 elasticsearch:
   host: elasticsearch
   port: 9200
+  # Set to https when the cluster serves TLS (matches xpack.security.http.ssl).
+  scheme: https
+  # Bitnami auto-generated TLS: trust CA via mounted PEM (caBundlePath) or insecure=true (dev only).
+  ssl:
+    insecure: true
+    caBundlePath: ""
+  # Keys in ai-monitoring-secrets (Bitnami / GitHub deploy workflow).
+  auth:
+    usernameKey: elasticsearch-username
+    passwordKey: elasticsearch-password
 
 secrets:
   # All credentials from ai-monitoring-secrets (deployed by install-dependencies before microservices)
@@ -79,3 +89,16 @@ readinessProbe:
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 6
+
+openshift:
+  enabled: false
+  route:
+    enabled: true
+    host: ""
+    annotations:
+      haproxy.router.openshift.io/timeout: 60s
+    tls:
+      enabled: true
+      termination: edge
+      insecureEdgeTerminationPolicy: Redirect
+      destinationCACertificate: ""
