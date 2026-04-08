@@ -1,5 +1,6 @@
 package com.ibm.aimonitoring.processor.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.aimonitoring.processor.dto.LogEntryDTO;
 import com.ibm.aimonitoring.processor.dto.LogSearchRequest;
 import com.ibm.aimonitoring.processor.dto.LogSearchResponse;
@@ -8,7 +9,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -26,17 +26,15 @@ class LogSearchControllerTest {
     @Mock
     private ElasticsearchService elasticsearchService;
 
-    @InjectMocks
     private LogSearchController logSearchController;
 
     @BeforeEach
     void setUp() {
-        logSearchController = new LogSearchController(elasticsearchService);
+        logSearchController = new LogSearchController(elasticsearchService, new ObjectMapper());
     }
 
     @Test
     void testSearchLogs_WithDefaultParameters() {
-        // Given
         LogSearchResponse expectedResponse = LogSearchResponse.builder()
                 .logs(List.of(LogEntryDTO.builder().message("test").build()))
                 .total(1L)
@@ -47,12 +45,10 @@ class LogSearchControllerTest {
         when(elasticsearchService.searchLogs(any(LogSearchRequest.class)))
                 .thenReturn(expectedResponse);
 
-        // When - using default values for page (0), size (50), sortBy ("timestamp"), sortDirection ("desc")
         ResponseEntity<LogSearchResponse> response = logSearchController.searchLogs(
-                0, 50, "timestamp", "desc", null, null, null, null, null
+                0, 50, "timestamp", "desc", null, null, null, null, null, null, null, null
         );
 
-        // Then
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(1L, response.getBody().getTotal());
@@ -61,7 +57,6 @@ class LogSearchControllerTest {
 
     @Test
     void testSearchLogs_WithAllParameters() {
-        // Given
         String level = "ERROR";
         String service = "api-gateway";
         String query = "exception";
@@ -78,16 +73,14 @@ class LogSearchControllerTest {
         when(elasticsearchService.searchLogs(any(LogSearchRequest.class)))
                 .thenReturn(expectedResponse);
 
-        // When
         ResponseEntity<LogSearchResponse> response = logSearchController.searchLogs(
-                1, 20, "timestamp", "asc", level, service, query, startTime, endTime
+                1, 20, "timestamp", "asc", level, service, query, null, startTime, null, endTime, null
         );
 
-        // Then
         assertEquals(HttpStatus.OK, response.getStatusCode());
         ArgumentCaptor<LogSearchRequest> captor = ArgumentCaptor.forClass(LogSearchRequest.class);
         verify(elasticsearchService).searchLogs(captor.capture());
-        
+
         LogSearchRequest request = captor.getValue();
         assertEquals(1, request.getPage());
         assertEquals(20, request.getSize());
@@ -101,8 +94,21 @@ class LogSearchControllerTest {
     }
 
     @Test
+    void testSearchLogs_UsesSearchTextAlias() {
+        when(elasticsearchService.searchLogs(any(LogSearchRequest.class)))
+                .thenReturn(LogSearchResponse.builder().logs(List.of()).total(0L).page(0).size(50).build());
+
+        logSearchController.searchLogs(
+                0, 50, "timestamp", "desc", null, null, null, "hello", null, null, null, null
+        );
+
+        ArgumentCaptor<LogSearchRequest> captor = ArgumentCaptor.forClass(LogSearchRequest.class);
+        verify(elasticsearchService).searchLogs(captor.capture());
+        assertEquals("hello", captor.getValue().getQuery());
+    }
+
+    @Test
     void testSearchLogs_WithMultipleLevels() {
-        // Given
         String levels = "ERROR,WARN,INFO";
 
         LogSearchResponse expectedResponse = LogSearchResponse.builder()
@@ -115,15 +121,13 @@ class LogSearchControllerTest {
         when(elasticsearchService.searchLogs(any(LogSearchRequest.class)))
                 .thenReturn(expectedResponse);
 
-        // When - using default values for page (0), size (50), sortBy ("timestamp"), sortDirection ("desc")
         logSearchController.searchLogs(
-                0, 50, "timestamp", "desc", levels, null, null, null, null
+                0, 50, "timestamp", "desc", levels, null, null, null, null, null, null, null
         );
 
-        // Then
         ArgumentCaptor<LogSearchRequest> captor = ArgumentCaptor.forClass(LogSearchRequest.class);
         verify(elasticsearchService).searchLogs(captor.capture());
-        
+
         LogSearchRequest request = captor.getValue();
         assertNotNull(request.getLevels());
         assertEquals(3, request.getLevels().size());
@@ -134,7 +138,6 @@ class LogSearchControllerTest {
 
     @Test
     void testSearchLogs_WithMultipleServices() {
-        // Given
         String services = "api-gateway,user-service,order-service";
 
         LogSearchResponse expectedResponse = LogSearchResponse.builder()
@@ -147,15 +150,13 @@ class LogSearchControllerTest {
         when(elasticsearchService.searchLogs(any(LogSearchRequest.class)))
                 .thenReturn(expectedResponse);
 
-        // When - using default values for page (0), size (50), sortBy ("timestamp"), sortDirection ("desc")
         logSearchController.searchLogs(
-                0, 50, "timestamp", "desc", null, services, null, null, null
+                0, 50, "timestamp", "desc", null, services, null, null, null, null, null, null
         );
 
-        // Then
         ArgumentCaptor<LogSearchRequest> captor = ArgumentCaptor.forClass(LogSearchRequest.class);
         verify(elasticsearchService).searchLogs(captor.capture());
-        
+
         LogSearchRequest request = captor.getValue();
         assertNotNull(request.getServices());
         assertEquals(3, request.getServices().size());
